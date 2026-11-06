@@ -14,11 +14,14 @@ namespace SkiingInSkyrim::Skiing
         // ModifyMovementData's vector is in the character's frame (x right, y forward) and measures speed along
         // the ground; in-game it was 1.167x the Havok speed in m/s at walk, run and sprint.
         constexpr float kMovementPerMeterPerSecond = 70.0F / 60.0F;
+        constexpr float kUnitsPerMetre = 70.0F;
 
         // A stick that hasn't reported for this long is ignored.
         constexpr float kStaleStickSeconds = 0.5F;
         constexpr float kStickSmoothingSeconds = 0.08F;
         constexpr float kTriggerDeadzone = 0.02F;
+        // Steering with the right stick, the left stick's sideways push turns the camera this fast at full.
+        constexpr float kLookDegreesPerSecond = 150.0F;
 
         struct Command
         {
@@ -81,12 +84,18 @@ namespace SkiingInSkyrim::Skiing
         bool g_edgeFromButtons = true;
         bool g_skidFromToggle = false;
 
-        // The left stick, smoothed so thumb twitches don't become ski twitches.
+        // The steering stick, smoothed so thumb twitches don't become ski twitches.
         Core::Vec2 g_stick{};
 
-        // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Aim: the left stick or W/A/S/D,
-        // relative to viewYaw (where the camera looks).
-        void ReadControls(Core::SkiInput& ski, float viewYaw, float delta, const Core::SkiSettings& physics)
+        Core::Vec2 FreshStick(float x, float y, float age)
+        {
+            return age >= 0.0F && age < kStaleStickSeconds ? Core::Vec2{ x, y } : Core::Vec2{};
+        }
+
+        // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Aim: the steering stick (left, or right
+        // if set) or W/A/S/D, relative to viewYaw (where the camera looks). Returns radians to turn the camera
+        // this frame: steering with the right stick, the left stick looks around instead.
+        float ReadControls(Core::SkiInput& ski, float viewYaw, float delta, const Core::SkiSettings& physics)
         {
             const auto  input = Input::Get();
             const float triggers = input.triggerRight - input.triggerLeft;
@@ -109,8 +118,9 @@ namespace SkiingInSkyrim::Skiing
             }
             ski.skidHeld = input.skid && !g_skidFromToggle;
 
-            const bool       stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
-            const Core::Vec2 stick = stickFresh ? Core::Vec2{ input.stickX, input.stickY } : Core::Vec2{};
+            const auto       left = FreshStick(input.stickX, input.stickY, input.stickAge);
+            const bool       rightSteers = Settings::AimWithRightStick();
+            const Core::Vec2 stick = rightSteers ? FreshStick(input.rightStickX, input.rightStickY, input.rightStickAge) : left;
             const float      blend = 1.0F - std::exp(-std::max(0.0F, delta) / kStickSmoothingSeconds);
             g_stick = { g_stick.x + (stick.x - g_stick.x) * blend, g_stick.y + (stick.y - g_stick.y) * blend };
 
@@ -123,6 +133,13 @@ namespace SkiingInSkyrim::Skiing
                 ski.aimYaw = viewYaw + std::atan2(g_stick.x, g_stick.y);
                 ski.aimStrength = Core::AimStrength(g_stick.x, g_stick.y, physics.aimDeadzone);
             }
+
+            if (!rightSteers) {
+                return 0.0F;
+            }
+            const float look = Core::AimStrength(left.x, 0.0F, physics.aimDeadzone);
+            return std::copysign(look, left.x) * kLookDegreesPerSecond * std::numbers::pi_v<float> / 180.0F *
+                   std::max(0.0F, delta);
         }
 
         // The engine's velocity in the model's convention: horizontal direction, speed along the ground.
@@ -156,6 +173,38 @@ namespace SkiingInSkyrim::Skiing
             const float vertical = Core::GroundHugVerticalSpeed(velocity, ground.normal, delta, physics);
             controller->SetLinearVelocityImpl(RE::hkVector4(velocity.x, velocity.y, vertical, 0.0F));
             return true;
+        }
+
+        // Which units the controller's fall start height is in, once seen: 1 for game units, the Havok world
+        // scale for Havok units.
+        std::optional<float> g_fallUnits;
+
+        // Skyrim's fall damage counts the height dropped since leaving the ground. On skis what hurts is how
+        // hard you meet the slope, so while off the ground the fall is restarted no higher than would land
+        // as hard as meeting the slope just left at the current velocity. Never more than the game's own.
+        void SoftenFall(RE::bhkCharacterController* controller, const RE::NiPoint3& position, const Core::Vec3& velocity,
+            const Core::GroundEstimate& ground, const Core::SkiSettings& physics)
+        {
+            g_debug.fallMetres = -1.0F;
+            if (controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported) {
+                return;
+            }
+            if (!g_fallUnits) {
+                // Decide from the height the game recorded at takeoff, once it's far enough from 0 to tell.
+                const float start = controller->fallStartHeight;
+                const float havok = RE::bhkWorld::GetWorldScale();
+                if (std::fabs(position.z) < 500.0F || start == 0.0F) {
+                    return;
+                }
+                g_fallUnits = std::fabs(start - position.z) <= std::fabs(start - position.z * havok) ? 1.0F : havok;
+                spdlog::info("fall start height is in {} units (start={:.1f}, z={:.1f})",
+                    *g_fallUnits == 1.0F ? "game" : "Havok", start, position.z);
+            }
+            const auto  normal = ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F };
+            const float metres = Core::LandingHeight(velocity, normal, physics);
+            const float soft = (position.z + metres * kUnitsPerMetre) * *g_fallUnits;
+            controller->fallStartHeight = std::min(controller->fallStartHeight, soft);
+            g_debug.fallMetres = (controller->fallStartHeight / *g_fallUnits - position.z) / kUnitsPerMetre;
         }
 
         void SetYaw(RE::PlayerCharacter* player, float yaw)
@@ -216,15 +265,16 @@ namespace SkiingInSkyrim::Skiing
         input.yaw = player->data.angle.z;
         const auto physics = Settings::Physics();
         Camera::Observe(player);
-        ReadControls(input, Camera::ViewYaw(player), delta, physics);
+        const float lookTurn = ReadControls(input, Camera::ViewYaw(player), delta, physics);
         input.hasObserved = !starting;
         input.observed = observed;
         const auto step = Core::StepSki(g_debug.ski, input, physics);
 
         SetYaw(player, step.yaw);
-        Camera::Apply(player, delta, step.velocity);
+        Camera::Apply(player, delta, step.velocity, lookTurn);
         SetCommand({ true, step.velocity });
         g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);
+        SoftenFall(controller, position, velocity, ground, physics);
         SetOverlay({
             .active = true,
             .inactiveReason = "",

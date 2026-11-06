@@ -77,22 +77,25 @@ namespace SkiingInSkyrim::Camera
         return g_state.observed ? *g_state.observed : player->data.angle.z;
     }
 
-    void Apply(RE::PlayerCharacter* player, float delta, Core::Vec2 velocity)
+    void Apply(RE::PlayerCharacter* player, float delta, Core::Vec2 velocity, float lookTurn)
     {
-        const auto settings = Settings::Camera();
+        const auto  settings = Settings::Camera();
+        const char* whyNot = "";
+        auto*       state = ThirdPerson(&whyNot);
         if (!settings.enabled) {
             g_state.follow = {};
+            if (state) {
+                state->freeRotation.x = WrapSigned(state->freeRotation.x + lookTurn);
+            }
             SetStatus("off");
             return;
         }
-        const char* whyNot = "";
-        auto*       state = ThirdPerson(&whyNot);
         if (!state || !g_state.observed) {
             g_state.follow = {};
             SetStatus(state ? "waiting" : whyNot);
             return;
         }
-        const float yaw = Core::UpdateCameraFollow(g_state.follow, settings, delta, *g_state.observed, velocity);
+        const float yaw = Core::UpdateCameraFollow(g_state.follow, settings, delta, *g_state.observed + lookTurn, velocity);
         state->freeRotation.x = WrapSigned(yaw - player->data.angle.z);
         g_state.yawDegrees = g_state.follow.yaw * kDegrees;
         g_state.lookDegrees = g_state.follow.look * kDegrees;

@@ -72,6 +72,7 @@ namespace SkiingInSkyrim::Telemetry
             float      takeoffSlope{ 0.0F };
             float      peak{ 0.0F };  // metres above the slope taken off from
             float      lastVertical{ 0.0F };
+            float      fallMetres{ -1.0F };  // what the game counts as the fall, last frame in the air
             int        frames{ 0 };
             int        hugFrames{ 0 };
             bool       jumped{ false };
@@ -97,21 +98,76 @@ namespace SkiingInSkyrim::Telemetry
                     hugFrames += ski.hugging ? 1 : 0;
                     jumped = jumped || jumping;
                     lastVertical = velocity.z;
+                    fallMetres = ski.fallMetres;
                     const Core::Vec3 offset{ position.x - start.x, position.y - start.y, position.z - start.z };
                     peak = std::max(peak, (offset.x * plane.x + offset.y * plane.y + offset.z * plane.z) / kUnitsPerMetre);
                     return;
                 }
                 inAir = false;
                 spdlog::info("air {:.2f}s{}: takeoff speed={:.1f}m/s vz={:+.1f} slope={:.0f} | peak above that slope={:.2f}m "
-                             "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames",
+                             "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames | fall counted={}",
                     seconds, jumped ? " (jump)" : "", takeoffSpeed, takeoffVertical, takeoffSlope, peak, lastVertical,
-                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees, hugFrames, frames);
+                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees, hugFrames, frames,
+                    fallMetres >= 0.0F ? fmt::format("{:.1f}m", fallMetres) : std::string("?"));
             }
         };
+
+        // Frame-to-frame shake of a tracked point: how much its velocity changes from one frame to the next
+        // (m/s), as RMS and worst over a sample window. Smooth skiing changes it by about acceleration * dt
+        // (well under 0.5 m/s); jitter shows up far above that.
+        struct Shake
+        {
+            std::optional<Core::Vec3> last;
+            std::optional<Core::Vec3> lastVelocity;
+            float                     sumSquares{ 0.0F };
+            float                     worst{ 0.0F };
+            int                       count{ 0 };
+            bool                      verticalOnly{ false };
+
+            void Add(const Core::Vec3& point, float delta)
+            {
+                if (last && delta > 0.0F) {
+                    Core::Vec3 velocity{ (point.x - last->x) / delta / kUnitsPerMetre,
+                        (point.y - last->y) / delta / kUnitsPerMetre, (point.z - last->z) / delta / kUnitsPerMetre };
+                    if (verticalOnly) {
+                        velocity.x = velocity.y = 0.0F;
+                    }
+                    if (lastVelocity) {
+                        const float change = Core::Length({ velocity.x - lastVelocity->x, velocity.y - lastVelocity->y,
+                            velocity.z - lastVelocity->z });
+                        sumSquares += change * change;
+                        worst = std::max(worst, change);
+                        ++count;
+                    }
+                    lastVelocity = velocity;
+                }
+                last = point;
+            }
+
+            void Lose() { last.reset(), lastVelocity.reset(); }
+
+            std::string Take()
+            {
+                const auto text = fmt::format("{:.2f}/{:.2f}", count ? std::sqrt(sumSquares / static_cast<float>(count)) : 0.0F,
+                    worst);
+                sumSquares = worst = 0.0F;
+                count = 0;
+                return text;
+            }
+        };
+
+        Core::Vec3 FromNi(const RE::NiPoint3& point) { return { point.x, point.y, point.z }; }
 
         struct Sampler
         {
             AirLog        air;
+            Shake         body;
+            Shake         bodyVertical{ .verticalOnly = true };
+            Shake         model;
+            Shake         cameraShake;
+            std::uint32_t lastState{ ~0U };
+            int           stateFlips{ 0 };
+            float         maxDelta{ 0.0F };
             float         sinceSample{ kSampleInterval };
             bool          wasEnabled{ false };
             Core::Contact lastContact{ Core::Contact::Grounded };
@@ -150,8 +206,12 @@ namespace SkiingInSkyrim::Telemetry
                     air.Update(support == RE::hkpSurfaceInfo::SupportedState::kSupported,
                         controller->context.currentState == RE::hkpCharacterStateTypes::kJumping, { at.x, at.y, at.z },
                         ToVec3(frameVelocity), ski, delta);
+                    TrackShake(player, controller, delta);
                 } else {
                     air = {};
+                    for (auto* shake : { &body, &bodyVertical, &model, &cameraShake }) {
+                        shake->Lose();
+                    }
                 }
                 const auto& estimate = ski.ground;
                 const bool transition = ski.active && estimate.contact != lastContact;
@@ -162,6 +222,8 @@ namespace SkiingInSkyrim::Telemetry
                 }
                 sinceSample = 0.0F;
                 const int flips = std::exchange(supportFlips, 0);
+                const int animFlips = std::exchange(stateFlips, 0);
+                const float worstDelta = std::exchange(maxDelta, 0.0F);
 
                 RE::hkVector4 havokVelocity;
                 controller->GetLinearVelocityImpl(havokVelocity);
@@ -176,6 +238,10 @@ namespace SkiingInSkyrim::Telemetry
                 const auto raw = Input::Get();
                 const auto move = Movement::Last();
                 const auto camera = Camera::GetInfo();
+                const auto* cameraRoot = CameraRoot();
+                const auto  cameraAt = cameraRoot ? cameraRoot->world.translate : position;
+                const float cameraDistance = Core::Length(FromNi(cameraAt - position)) / kUnitsPerMetre;
+                const float cameraUp = (cameraAt.z - position.z) / kUnitsPerMetre;
                 const char keys[] = { raw.forward ? 'W' : '-', raw.left ? 'A' : '-', raw.back ? 'S' : '-',
                     raw.right ? 'D' : '-', '\0' };
 
@@ -187,7 +253,10 @@ namespace SkiingInSkyrim::Telemetry
                     "| state={} support={} flips={} slope={:.1f} fall-line={:+.0f} "
                     "normal=({:+.3f},{:+.3f},{:+.3f}) supportNorm=({:+.3f},{:+.3f},{:+.3f}) "
                     "vel=({:+.2f},{:+.2f},{:+.2f})m/s ground-speed={:.2f}m/s move=({:+.2f},{:+.2f},{:+.2f}) yaw={:.0f} "
-                    "keys={} keyAge={:.2f} stick=({:+.2f},{:+.2f}) stickAge={:.2f} tdm={} pos=({:.0f},{:.0f},{:.0f}) dt={:.4f}",
+                    "keys={} keyAge={:.2f} stick=({:+.2f},{:+.2f}) stickAge={:.2f} rstick=({:+.2f},{:+.2f}) tdm={} "
+                    "pos=({:.0f},{:.0f},{:.0f}) dt={:.4f} tuck={:.2f} "
+                    "| shake rms/max m/s: body={} body-z={} model={} cam={} | cam-dist={:.2f}m cam-up={:+.2f}m "
+                    "state-flips={} dt-max={:.4f}",
                     transition ? "*" : "", ski.active ? "active" : ski.inactiveReason, ContactName(estimate.contact),
                     ski.hugging,
                     estimate.unsupportedSeconds, SourceName(estimate.source), estimate.wallContact, smoothed.angleDegrees,
@@ -202,8 +271,39 @@ namespace SkiingInSkyrim::Telemetry
                     normal.x, normal.y, normal.z, supportNormal.x, supportNormal.y, supportNormal.z,
                     velocity.x, velocity.y, velocity.z, Core::HorizontalLength(velocity),
                     move.movement.x, move.movement.y, move.movement.z, yaw * kDegrees,
-                    keys, raw.keyAge, raw.stickX, raw.stickY, raw.stickAge, Tdm::Status(), position.x, position.y,
-                    position.z, delta);
+                    keys, raw.keyAge, raw.stickX, raw.stickY, raw.stickAge, raw.rightStickX, raw.rightStickY,
+                    Tdm::Status(), position.x, position.y, position.z, delta, ski.step.tuck, body.Take(),
+                    bodyVertical.Take(), model.Take(), cameraShake.Take(), cameraDistance, cameraUp, animFlips, worstDelta);
+            }
+
+            static RE::NiNode* CameraRoot()
+            {
+                auto* camera = RE::PlayerCamera::GetSingleton();
+                return camera ? camera->cameraRoot.get() : nullptr;
+            }
+
+            // Every frame while skiing: where the character, its 3D model and the camera are.
+            void TrackShake(RE::PlayerCharacter* player, RE::bhkCharacterController* controller, float delta)
+            {
+                const auto position = FromNi(player->GetPosition());
+                body.Add(position, delta);
+                bodyVertical.Add(position, delta);
+                if (const auto* root = player->Get3D()) {
+                    model.Add(FromNi(root->world.translate), delta);
+                } else {
+                    model.Lose();
+                }
+                if (const auto* root = CameraRoot()) {
+                    cameraShake.Add(FromNi(root->world.translate), delta);
+                } else {
+                    cameraShake.Lose();
+                }
+                const auto state = static_cast<std::uint32_t>(controller->context.currentState);
+                if (lastState != ~0U && state != lastState) {
+                    ++stateFlips;
+                }
+                lastState = state;
+                maxDelta = std::max(maxDelta, delta);
             }
         };
 

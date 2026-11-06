@@ -5,8 +5,9 @@
 namespace SkiingInSkyrim::Core
 {
     // Chase camera yaw: follows the direction of travel with a lag, and stays put when nearly stopped (the
-    // stick aims relative to the camera, so following the skis would chase the aim round), plus a look-around offset from the player's own camera input that eases back once they stop
-    // looking. Yaws are world radians in the ski model's convention.
+    // stick aims relative to the camera, so following the skis would chase the aim round), plus a
+    // look-around offset from the player's own camera input that eases back once they stop looking. Yaws
+    // are world radians in the ski model's convention.
     struct CameraFollowSettings
     {
         bool  enabled{ true };

@@ -65,10 +65,24 @@ namespace SkiingInSkyrim::Core
         // Steering harder than the skis can carve skids them round, scrubbing speed.
         float steerDegreesPerSecond{ 120.0F };
         float aimDeadzone{ 0.2F };
+        // Pushing firmly the way the skis already point tucks, cutting air drag by this fraction.
+        float tuckDragReduction{ 0.4F };
+        // With the stick centred, no edge and no skid, flat skis sliding faster than a side-slip swing round
+        // toward the direction of travel at up to this rate, so a sideways smear doesn't go on forever.
+        // Slow side-slips (falling leaf) are left alone. 0 turns it off.
+        float selfAlignDegreesPerSecond{ 45.0F };
 
         // Side-slipping (sliding slowly and mostly sideways), the edge's grip is measured against the slope:
         // no edge slides on flat skis, full edge holds you, and the trigger travel in between feathers the
         // slip on any slope.
+
+        // Powder: deep snow resists you in proportion to speed (powderDrag, deceleration per m/s, on top of
+        // air drag), pushes back harder against the skis' sides (flat grip times powderSideGrip, so skids,
+        // stops and steered turns bite more), and cushions landings (powderLanding of the impact absorbed).
+        bool  powder{ true };
+        float powderDrag{ 0.15F };
+        float powderSideGrip{ 2.0F };
+        float powderLanding{ 0.5F };
 
         // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
         // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra
@@ -122,6 +136,7 @@ namespace SkiingInSkyrim::Core
         float gripLimit{ 0.0F };       // m/s^2 of sideways force the edge can give
         bool  skidding{ false };       // sideways motion exceeded the grip limit
         bool  parked{ false };         // stopped while holding skid
+        float tuck{ 0.0F };            // 0..1
     };
 
     // Arc radius of a carving ski at the given edge angle, or infinity when flat.
@@ -132,6 +147,13 @@ namespace SkiingInSkyrim::Core
     [[nodiscard]] float AimStrength(float stickX, float stickY, float deadzone) noexcept;
 
     SkiStep StepSki(SkiState& state, const SkiInput& input, const SkiSettings& settings = {}) noexcept;
+
+    // Metres of free fall that would land as hard as meeting a slope with the given normal at this velocity
+    // (m/s): only the speed into the slope counts, so landing along it is soft whatever the drop.
+    [[nodiscard]] float ImpactHeight(Vec3 velocity, Vec3 slopeNormal, float gravity) noexcept;
+
+    // ImpactHeight, cushioned by powder if it's on.
+    [[nodiscard]] float LandingHeight(Vec3 velocity, Vec3 slopeNormal, const SkiSettings& settings) noexcept;
 
     // While briefly off the ground after skiing over a crest: the vertical velocity (m/s) to use instead
     // of velocity.z, following the slope just left (lastNormal) rather than rising off it, plus the extra

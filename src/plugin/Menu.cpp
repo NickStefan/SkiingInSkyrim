@@ -126,6 +126,15 @@ namespace SkiingInSkyrim::Menu
                 SetSkiingEnabled(enabled, "menu");
             }
             RenderBindings();
+            bool rightStick = Settings::AimWithRightStick();
+            if (ImGuiMCP::Checkbox("Steer with the right stick", &rightStick)) {
+                Settings::SetAimWithRightStick(rightStick);
+                Settings::Save();
+            }
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", "The right stick steers instead of the left, and stops turning the camera "
+                                           "while skiing; push the left stick sideways to look around.");
+            }
             bool overlay = Settings::ShowOverlay();
             if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {
                 Settings::SetShowOverlay(overlay);
@@ -143,17 +152,20 @@ namespace SkiingInSkyrim::Menu
             ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
                                         "an arc that tightens with more edge. Attacks, blocking and readying weapons "
                                         "are off while skiing.");
-            ImGuiMCP::TextWrapped("%s", "Steer with the left stick or W/A/S/D: the skis turn toward where you push, "
-                                        "relative to the camera, more firmly the further you push. Leave it centred "
-                                        "and the skis carve wherever the edges take them. Steering harder than they "
-                                        "can carve skids them round and scrubs speed.");
+            ImGuiMCP::TextWrapped("%s", "Steer with the left stick (or the right, if set above) or W/A/S/D: the skis "
+                                        "turn toward where you push, relative to the camera, more firmly the further "
+                                        "you push. Push firmly the way the skis already point to tuck and go faster. "
+                                        "Leave it centred and the skis carve wherever the edges take them; with no "
+                                        "edge either, skis smearing sideways at speed swing back round to where "
+                                        "you're going. Steering harder than they can carve skids them round and "
+                                        "scrubs speed.");
             ImGuiMCP::TextWrapped("%s", "Hold skid to twist the skis sideways and dig the edges in: a hockey stop. "
                                         "They twist toward the edge you're holding, or into the hill with no edge, "
                                         "further the longer you hold. Keep holding and you stay put on the hill. "
                                         "Release before you've stopped and they untwist; stop completely and they "
                                         "stay where they are. Sliding slowly sideways, the uphill edge feathers the "
-                                        "slip: none slides, full holds. Telemetry is written to the log while "
-                                        "enabled.");
+                                        "slip: none slides, full holds. Landing along a slope is soft; what hurts is "
+                                        "how hard you meet it. Telemetry is written to the log while enabled.");
 
             ImGuiMCP::SeparatorText("Compatibility");
             RenderTdm();

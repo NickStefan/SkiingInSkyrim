@@ -11,22 +11,26 @@ namespace SkiingInSkyrim::Input
         bool  back{ false };
         bool  left{ false };
         bool  right{ false };
-        float stickX{ 0.0F };
+        float stickX{ 0.0F };  // left stick
         float stickY{ 0.0F };
+        float rightStickX{ 0.0F };
+        float rightStickY{ 0.0F };
         float triggerLeft{ 0.0F };  // 0..1
         float triggerRight{ 0.0F };
         bool  mouseLeft{ false };
         bool  mouseRight{ false };
         bool  skid{ false };  // either skid binding held
-        // Seconds since the last keyboard movement event / left stick event; negative if never seen.
+        // Seconds since the last keyboard movement event / stick event; negative if never seen.
         float keyAge{ -1.0F };
         float stickAge{ -1.0F };
+        float rightStickAge{ -1.0F };
     };
 
     bool     Register();
     Snapshot Get();
 
-    // Hooks the attack/block and ready-weapon handlers so skiing controls don't swing or sheathe weapons.
+    // Hooks the attack/block and ready-weapon handlers so skiing controls don't swing or sheathe weapons, and
+    // the look handler so the right stick doesn't turn the camera while it steers.
     void Install();
 
     // Binding capture for the settings menu. While capturing, the next button press (other than Escape,

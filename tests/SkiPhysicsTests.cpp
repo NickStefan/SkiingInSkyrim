@@ -33,10 +33,18 @@ namespace
         bool  grounded{ true };
     };
 
+    // Packed snow: most tests are about the base model.
+    SkiSettings Packed()
+    {
+        SkiSettings settings;
+        settings.powder = false;
+        return settings;
+    }
+
     struct Skier
     {
         SkiState    state;
-        SkiSettings settings;
+        SkiSettings settings{ Packed() };
         float       yaw{ 0.0F };
         SkiStep     last;
 
@@ -118,7 +126,7 @@ TEST_CASE("standing across the fall line on flat skis side-slips downhill")
     skier.Run(1.0F, SlopeDownY(30.0F));
     CHECK(skier.state.velocity.y > 2.0F);
     CHECK(std::fabs(skier.state.velocity.x) < 0.1F);
-    CHECK_NEAR(skier.yaw, kQuarterTurn, 1e-5F);
+    CHECK_NEAR(skier.yaw, kQuarterTurn, 3.0F * kDegrees);  // only just fast enough to start self-aligning
     CHECK(skier.last.skidding);
 }
 
@@ -271,6 +279,7 @@ TEST_CASE("a short hold gives a partial pivot")
 TEST_CASE("releasing a skid that only slowed you untwists at the normal rate")
 {
     Skier skier;
+    skier.settings.selfAlignDegreesPerSecond = 0.0F;
     skier.yaw = 0.2F;
     skier.state.velocity = { std::sin(0.2F) * 8.0F, std::cos(0.2F) * 8.0F };
     skier.Run(0.15F, kFlat, { .skid = true });
@@ -673,3 +682,93 @@ TEST_CASE("yaw stays in [0, 2pi)")
     CHECK(skier.yaw > 6.0F);
 }
 
+
+TEST_CASE("with nothing held, flat skis smearing sideways at speed swing round to the direction of travel")
+{
+    Skier skier;  // 35 degree slope falling toward +Y, skis across it, sliding straight down at 7 m/s
+    skier.yaw = kQuarterTurn;
+    skier.state.velocity = { 0.0F, 7.0F };
+    skier.Run(2.5F, SlopeDownY(35.0F));
+    CHECK(AngleBetweenRadians(skier.yaw, Heading(skier.state.velocity)) < 15.0F * kDegrees);
+}
+
+TEST_CASE("self-aligning leaves edged skis, skids and slow side-slips alone")
+{
+    Skier edged;  // traversing with a little edge, skis slipping 30 degrees
+    edged.Edged(0.3F).yaw = kQuarterTurn;
+    edged.state.velocity = Scale2(Forward(kQuarterTurn - 30.0F * kDegrees), 10.0F);
+    edged.Step(kFlat, { .edge = 0.3F });
+    Skier flat = edged;
+    flat.state = {};
+    flat.yaw = kQuarterTurn;
+    flat.state.velocity = Scale2(Forward(kQuarterTurn - 30.0F * kDegrees), 10.0F);
+    flat.Step(kFlat);
+    CHECK(flat.yaw < edged.yaw);  // only the flat skis were pulled toward travel
+
+    Skier leaf;  // falling leaf: slow, sideways, feathering on the uphill edge
+    leaf.Edged(0.4F).yaw = kQuarterTurn;
+    leaf.state.velocity = { 0.0F, 1.5F };
+    leaf.Run(0.5F, SlopeDownY(25.0F), { .edge = 0.4F });
+    CHECK_NEAR(leaf.yaw, kQuarterTurn, 0.01F);
+
+    Skier slow;  // slow sideways slide with flat skis: side-slipping, not smearing
+    slow.yaw = kQuarterTurn;
+    slow.state.velocity = { 0.0F, 2.0F };
+    slow.Step(SlopeDownY(25.0F));
+    CHECK_NEAR(slow.yaw, kQuarterTurn, 1e-4F);
+}
+
+TEST_CASE("pushing firmly the way the skis point tucks, and tucking goes faster")
+{
+    Skier tucked;
+    Skier standing;
+    tucked.Run(20.0F, SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = 0.0F });
+    standing.Run(20.0F, SlopeDownY(20.0F));
+    CHECK_NEAR(tucked.last.tuck, 1.0F, 1e-3F);
+    CHECK_NEAR(standing.last.tuck, 0.0F, 1e-6F);
+    CHECK(tucked.Speed() > standing.Speed() * 1.2F);
+
+    Skier turning;  // steering hard to the side isn't a tuck
+    turning.state.velocity = { 0.0F, 10.0F };
+    turning.Step(SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = kQuarterTurn });
+    CHECK_NEAR(turning.last.tuck, 0.0F, 1e-6F);
+}
+
+TEST_CASE("landing along a slope is soft whatever the drop; meeting it head on is a fall")
+{
+    const Vec3 slope = SlopeDownY(30.0F);
+    // Moving exactly along the slope: nothing into it.
+    const Vec3 along{ 0.0F, 10.0F * std::cos(30.0F * kDegrees), -10.0F * std::sin(30.0F * kDegrees) };
+    CHECK_NEAR(ImpactHeight(along, slope, 9.81F), 0.0F, 1e-4F);
+    // Straight down onto flat ground: the height that gives that speed.
+    CHECK_NEAR(ImpactHeight({ 0.0F, 0.0F, -14.0F }, kFlat, 9.81F), 14.0F * 14.0F / (2.0F * 9.81F), 1e-3F);
+    // Moving away from the slope: nothing.
+    CHECK_NEAR(ImpactHeight({ 0.0F, 0.0F, 5.0F }, kFlat, 9.81F), 0.0F, 1e-6F);
+    // Dropping onto a 30 degree slope counts the part of the speed into it.
+    const float into = 14.0F * std::cos(30.0F * kDegrees);
+    CHECK_NEAR(ImpactHeight({ 0.0F, 0.0F, -14.0F }, slope, 9.81F), into * into / (2.0F * 9.81F), 1e-3F);
+}
+
+TEST_CASE("powder is slower, bites harder sideways and cushions landings")
+{
+    Skier packed;
+    Skier powder;
+    powder.settings.powder = true;
+    packed.Run(30.0F, SlopeDownY(35.0F));
+    powder.Run(30.0F, SlopeDownY(35.0F));
+    CHECK(powder.Speed() < packed.Speed() * 0.85F);
+    CHECK(powder.Speed() > packed.Speed() * 0.6F);
+
+    Skier packedSmear;  // flat skis across the direction of travel on the flat
+    packedSmear.yaw = kQuarterTurn;
+    packedSmear.state.velocity = { 0.0F, 3.0F };
+    Skier powderSmear = packedSmear;
+    powderSmear.settings.powder = true;
+    packedSmear.Run(0.5F, kFlat);
+    powderSmear.Run(0.5F, kFlat);
+    CHECK(powderSmear.Speed() < packedSmear.Speed() - 0.4F);
+
+    const Vec3 drop{ 0.0F, 0.0F, -14.0F };
+    CHECK_NEAR(LandingHeight(drop, kFlat, powder.settings), ImpactHeight(drop, kFlat, 9.81F) * 0.5F, 1e-3F);
+    CHECK_NEAR(LandingHeight(drop, kFlat, packed.settings), ImpactHeight(drop, kFlat, 9.81F), 1e-3F);
+}

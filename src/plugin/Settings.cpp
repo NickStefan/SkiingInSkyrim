@@ -58,6 +58,22 @@ namespace SkiingInSkyrim::Settings
                 &S::steerDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
             { "AimDeadzone", "Stick deadzone", "Fraction of the stick's travel, from the centre, that does nothing.",
                 &S::aimDeadzone, 0.0F, 0.6F, "%.2f" },
+            { "TuckDragReduction", "Tuck", "Fraction of air drag cut by tucking (pushing firmly the way the skis "
+                                           "point). Higher means faster in a tuck; 0 is off.",
+                &S::tuckDragReduction, 0.0F, 0.8F, "%.2f" },
+            { "SelfAlignDegreesPerSecond", "Self-align rate", "Degrees per second flat skis smearing sideways at speed "
+                                                              "swing round to where you're going, with the stick centred "
+                                                              "and nothing held. Slow side-slips are left alone; 0 is off.",
+                &S::selfAlignDegreesPerSecond, 0.0F, 180.0F, "%.0f" },
+            { "PowderDrag", "Powder drag", "Deceleration per m/s of speed from ploughing through deep snow, when "
+                                           "powder is on. Higher means slower; 0.15 takes about a fifth off top speed "
+                                           "on steep runs.",
+                &S::powderDrag, 0.0F, 0.5F, "%.2f" },
+            { "PowderSideGrip", "Powder side grip", "Flat grip is multiplied by this in powder: skids, stops and "
+                                                    "steered turns bite harder.",
+                &S::powderSideGrip, 1.0F, 4.0F, "%.2f" },
+            { "PowderLanding", "Powder landing", "Fraction of a landing's impact the powder absorbs.",
+                &S::powderLanding, 0.0F, 1.0F, "%.2f" },
             { "GroundHugSeconds", "Ground hug time", "Seconds off the ground over a crest (not a jump) during which "
                                                      "you're held to the slope; longer absorbs bigger crests, 0 is off.",
                 &S::groundHugSeconds, 0.0F, 1.0F, "%.2f" },
@@ -72,6 +88,12 @@ namespace SkiingInSkyrim::Settings
                 0.05F, 1.0F, "%.2f" },
             { "BlockedMinSpeed", "Blocked min speed", "m/s. Below this, blocking is not checked.", &S::blockedMinSpeed, 0.0F,
                 3.0F, "%.2f" },
+        };
+
+        constexpr BoolField kPhysicsSwitches[] = {
+            { "Powder", "Powder", "Deep snow everywhere: slower, skids and stops bite harder, landings are softer "
+                                  "(see the Powder sliders).",
+                &S::powder },
         };
 
         using C = Core::CameraFollowSettings;
@@ -127,6 +149,7 @@ namespace SkiingInSkyrim::Settings
             std::array<Hotkey, kBindingCount>       bindings;
             std::array<std::string, kBindingCount>  bindingNames;
             bool                                    showOverlay{ false };
+            bool                                    aimWithRightStick{ false };
         };
 
         std::mutex g_lock;
@@ -176,7 +199,7 @@ namespace SkiingInSkyrim::Settings
     }
 
     std::span<const FloatField>  PhysicsFields() noexcept { return kPhysicsFields; }
-    std::span<const BoolField>   PhysicsSwitches() noexcept { return {}; }
+    std::span<const BoolField>   PhysicsSwitches() noexcept { return kPhysicsSwitches; }
     std::span<const CameraField> CameraFields() noexcept { return kCameraFields; }
 
     void Load()
@@ -200,6 +223,9 @@ namespace SkiingInSkyrim::Settings
                         loaded.bindings[i].modifier = *modifier;
                     }
                 }
+            }
+            if (const auto value = ini.GetInt("Controls", "AimWithRightStick")) {
+                loaded.aimWithRightStick = *value != 0;
             }
             for (const auto& field : kPhysicsFields) {
                 if (const auto value = ini.GetFloat("Physics", field.key)) {
@@ -251,6 +277,8 @@ namespace SkiingInSkyrim::Settings
             WriteButton(text, kBindings[i].key, state.bindings[i].key);
             WriteButton(text, std::string(kBindings[i].key) + "Modifier", state.bindings[i].modifier);
         }
+        text += "; Steer with the right stick instead of the left (1 on, 0 off). The left stick then looks around.\n";
+        text += fmt::format("AimWithRightStick = {}\n", state.aimWithRightStick ? 1 : 0);
         text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
@@ -332,5 +360,17 @@ namespace SkiingInSkyrim::Settings
     {
         std::scoped_lock lock(g_lock);
         g_state.showOverlay = show;
+    }
+
+    bool AimWithRightStick()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.aimWithRightStick;
+    }
+
+    void SetAimWithRightStick(bool right)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.aimWithRightStick = right;
     }
 }

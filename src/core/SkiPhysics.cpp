@@ -60,6 +60,17 @@ namespace SkiingInSkyrim::Core
         // so squeezing all the way always stops you hard.
         constexpr float kFeatherTravel = 0.8F;
 
+        // Self-aligning (see SkiSettings::selfAlignDegreesPerSecond) fades in over the same speeds the
+        // side-slip feathering fades out, and only with the edge within kEdgeSideThreshold of flat.
+        constexpr float kAlignStartSpeed = kFeatherFullSpeed;
+        constexpr float kAlignFullSpeed = kFeatherNoneSpeed;
+
+        // Tucking: how firm a push (aim strength) and how close to where the skis point (cosine of the angle).
+        constexpr float kTuckStartStrength = 0.5F;
+        constexpr float kTuckFullStrength = 0.9F;
+        const float     kTuckStartAlign = std::cos(30.0F * kRadians);
+        const float     kTuckFullAlign = std::cos(10.0F * kRadians);
+
         float SkidSide(const SkiState& state, const SkiInput& input, float edgeTarget) noexcept
         {
             if (std::fabs(edgeTarget) > kEdgeSideThreshold) {
@@ -126,6 +137,11 @@ namespace SkiingInSkyrim::Core
             return t * t * (3.0F - 2.0F * t);
         }
 
+        float FlatGrip(const SkiSettings& settings) noexcept
+        {
+            return settings.flatGrip * (settings.powder ? settings.powderSideGrip : 1.0F);
+        }
+
         float Smoothstep(float edge0, float edge1, float x) noexcept
         {
             const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0F, 1.0F);
@@ -153,7 +169,7 @@ namespace SkiingInSkyrim::Core
             if (weight <= 0.0F) {
                 return edgeGrip;
             }
-            const float flat = normalForce * settings.flatGrip;
+            const float flat = normalForce * FlatGrip(settings);
             const float hold = std::max(kFeatherHoldMargin * settings.gravity * Length(downhill), kFeatherMinFullGrip);
             const float uphillEdge = std::max(0.0F, -edge * std::copysign(1.0F, side));
             float       feather = 0.0F;
@@ -199,6 +215,23 @@ namespace SkiingInSkyrim::Core
             floor = std::min(vertical, alongSlope - settings.groundHugMaxDropSpeed);
         }
         return std::max(floor, vertical - settings.groundHugGravity * std::max(0.0F, deltaSeconds));
+    }
+
+    float ImpactHeight(Vec3 velocity, Vec3 slopeNormal, float gravity) noexcept
+    {
+        const float length = std::sqrt(slopeNormal.x * slopeNormal.x + slopeNormal.y * slopeNormal.y +
+                                       slopeNormal.z * slopeNormal.z);
+        if (length < 1e-4F || gravity <= 0.0F) {
+            return 0.0F;
+        }
+        const float into = -(velocity.x * slopeNormal.x + velocity.y * slopeNormal.y + velocity.z * slopeNormal.z) / length;
+        return into > 0.0F ? into * into / (2.0F * gravity) : 0.0F;
+    }
+
+    float LandingHeight(Vec3 velocity, Vec3 slopeNormal, const SkiSettings& settings) noexcept
+    {
+        const float height = ImpactHeight(velocity, slopeNormal, settings.gravity);
+        return settings.powder ? height * (1.0F - std::clamp(settings.powderLanding, 0.0F, 1.0F)) : height;
     }
 
     float AimStrength(float stickX, float stickY, float deadzone) noexcept
@@ -264,10 +297,21 @@ namespace SkiingInSkyrim::Core
             }
         }
 
-        // Steering: the skis turn toward where the stick aims, as firmly as it's pushed.
+        // Steering: the skis turn toward where the stick aims, as firmly as it's pushed. Pushing firmly the
+        // way they already point tucks.
         const float aimStrength = std::clamp(input.aimStrength, 0.0F, 1.0F);
+        float       tuck = 0.0F;
         if (aimStrength > 0.0F) {
+            tuck = Smoothstep(kTuckStartStrength, kTuckFullStrength, aimStrength) *
+                   Smoothstep(kTuckStartAlign, kTuckFullAlign, std::cos(input.aimYaw - yaw));
             yaw = RotateToward(yaw, input.aimYaw, aimStrength * settings.steerDegreesPerSecond * kRadians * dt);
+        } else if (!input.skidHeld && input.grounded && state.pivotAngle <= 0.0F &&
+                   std::fabs(state.edge) <= kEdgeSideThreshold && settings.selfAlignDegreesPerSecond > 0.0F) {
+            const float weight = Smoothstep(kAlignStartSpeed, kAlignFullSpeed, speedBefore);
+            if (weight > 0.0F) {
+                const float travel = std::atan2(state.velocity.x, state.velocity.y);
+                yaw = RotateToward(yaw, travel, weight * settings.selfAlignDegreesPerSecond * kRadians * dt);
+            }
         }
 
         const float edgeAngle = EdgeRadians(state.edge, settings);
@@ -284,10 +328,11 @@ namespace SkiingInSkyrim::Core
         }
 
         const float speed = Length(velocity);
+        const float drag = settings.dragPerSpeedSquared * (1.0F - std::clamp(settings.tuckDragReduction, 0.0F, 1.0F) * tuck);
         if (input.grounded) {
             const auto n = input.hasNormal ? input.normal : Vec3{ 0.0F, 0.0F, 1.0F };
             const float normalForce = settings.gravity * std::max(0.0F, n.z);
-            float grip = normalForce * (settings.flatGrip + settings.edgeGrip * std::tan(gripAngle));
+            float grip = normalForce * (FlatGrip(settings) + settings.edgeGrip * std::tan(gripAngle));
             if (!input.skidHeld) {
                 grip = FeatherGrip(grip, state.edge, yaw, velocity, n, normalForce, settings);
             }
@@ -336,9 +381,10 @@ namespace SkiingInSkyrim::Core
             along = std::copysign(std::max(0.0F, std::fabs(along) - settings.snowFriction * normalForce * dt), along);
 
             velocity = Add(Scale(forward, along), Scale(right, newSide));
-            velocity = Decelerate(velocity, settings.dragPerSpeedSquared * speed * speed, dt);
+            const float powderDrag = settings.powder ? settings.powderDrag * speed : 0.0F;
+            velocity = Decelerate(velocity, drag * speed * speed + powderDrag, dt);
         } else {
-            velocity = Decelerate(velocity, settings.dragPerSpeedSquared * speed * speed, dt);
+            velocity = Decelerate(velocity, drag * speed * speed, dt);
         }
 
         const float newSpeed = Length(velocity);
@@ -353,6 +399,7 @@ namespace SkiingInSkyrim::Core
         result.yaw = yaw;
         result.edgeDegrees = std::copysign(edgeAngle * kDegrees, state.edge);
         result.parked = state.parked;
+        result.tuck = tuck;
         if (state.pivotAngle > 0.0F) {
             result.pivotDegrees = state.pivotSide * state.pivotAngle * kDegrees;
         }

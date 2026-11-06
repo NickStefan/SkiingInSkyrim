@@ -21,6 +21,7 @@ namespace SkiingInSkyrim::Skiing
         Core::SkiStep        step;
         float                observedSpeed{ 0.0F };
         bool                 hugging{ false };  // holding the skier to the slope over a crest this frame
+        float                fallMetres{ -1.0F };  // off the ground: the fall the game will count, if known
     };
 
     // Main thread.
