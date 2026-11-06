@@ -214,10 +214,16 @@ namespace SkiingInSkyrim::Skiing
         struct HeightSync
         {
             std::optional<float> offset;
-            std::optional<float> lastZ;
+            std::optional<float> lastZ;  // the game's own value, before any lowering
             std::optional<float> lastBodyZ;
+            float                candidate{ 0.0F };
+            int                  agreeing{ 0 };
         };
         HeightSync g_height;
+
+        // A skating stride is a single frame; the overlay shows skating for this long after one.
+        constexpr float kSkatingShownSeconds = 0.8F;
+        float           g_sinceStride = kSkatingShownSeconds;
 
         constexpr float kGentleNormalZ = 0.966F;  // cos 15 degrees
         // Game units per second, times the frame time, so they mean the same at any frame rate: the position's
@@ -225,6 +231,10 @@ namespace SkiingInSkyrim::Skiing
         // the body is the game catching up.
         constexpr float kAgreeSpeed = 30.0F;
         constexpr float kCatchUpSpeed = 600.0F;
+        // An offset is only taken once this many readings in a row agree within kLearnTolerance (game units);
+        // single readings mid-landing can be well off, and an offset too low buries the feet.
+        constexpr int   kLearnReadings = 6;
+        constexpr float kLearnTolerance = 1.0F;
 
         float BodyHeight(RE::bhkCharacterController* controller)
         {
@@ -238,32 +248,46 @@ namespace SkiingInSkyrim::Skiing
         {
             const float bodyZ = BodyHeight(controller);
             float&      z = player->data.location.z;
+            const float gameZ = z;
+            const bool  gentleSlope = ground.hasNormal && ground.normal.z >= kGentleNormalZ;
             if (g_height.lastZ && g_height.lastBodyZ && delta > 0.0F) {
-                const float moved = z - *g_height.lastZ;
+                const float moved = gameZ - *g_height.lastZ;
                 const float bodyMoved = bodyZ - *g_height.lastBodyZ;
                 const bool  supported =
                     controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported;
-                const bool gentle = supported && ground.hasNormal && ground.normal.z >= kGentleNormalZ &&
-                                    std::fabs(moved - bodyMoved) < kAgreeSpeed * delta;
-                if (gentle || moved - bodyMoved < -kCatchUpSpeed * delta) {
-                    const float learned = z - bodyZ;
-                    if (!g_height.offset || std::fabs(*g_height.offset - learned) > 2.0F) {
-                        spdlog::info("character sits {:.1f} units from the physics body ({})", learned,
-                            gentle ? "gentle ground" : "caught up");
+                const bool gentle = supported && gentleSlope && std::fabs(moved - bodyMoved) < kAgreeSpeed * delta;
+                // Catching up on steep ground is only trusted to get a first offset before any gentle ground.
+                const bool caughtUp = !g_height.offset && moved - bodyMoved < -kCatchUpSpeed * delta;
+                if (gentle || caughtUp) {
+                    const float learned = gameZ - bodyZ;
+                    if (g_height.agreeing > 0 && std::fabs(learned - g_height.candidate) <= kLearnTolerance) {
+                        ++g_height.agreeing;
+                    } else {
+                        g_height.candidate = learned;
+                        g_height.agreeing = 1;
                     }
-                    g_height.offset = learned;
+                    if (g_height.agreeing >= kLearnReadings) {
+                        if (!g_height.offset || std::fabs(*g_height.offset - learned) > 2.0F) {
+                            spdlog::info("character sits {:.1f} units from the physics body ({})", learned,
+                                gentle ? "gentle ground" : "caught up");
+                        }
+                        g_height.offset = learned;
+                    }
+                } else if (gentleSlope) {
+                    g_height.agreeing = 0;
                 }
             }
 
+            // Gentle ground is left to the game, so its own heights there stay clean to learn from.
             float lowered = 0.0F;
-            if (physics.smoothHeight && g_height.offset && ground.contact == Core::Contact::Grounded) {
+            if (physics.smoothHeight && g_height.offset && ground.contact == Core::Contact::Grounded && !gentleSlope) {
                 const float target = bodyZ + *g_height.offset;
                 if (z > target) {
                     lowered = z - target;
                     z = target;
                 }
             }
-            g_height.lastZ = z;
+            g_height.lastZ = gameZ;
             g_height.lastBodyZ = bodyZ;
             return lowered;
         }
@@ -302,6 +326,8 @@ namespace SkiingInSkyrim::Skiing
             g_ground.Reset();
             g_skidFromToggle = true;
             g_stick = {};
+            g_height.agreeing = 0;
+            g_sinceStride = kSkatingShownSeconds;
         }
         const auto& ground = g_ground.Update({
             .supported = controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported,
@@ -332,6 +358,7 @@ namespace SkiingInSkyrim::Skiing
         input.hasObserved = !starting;
         input.observed = observed;
         const auto step = Core::StepSki(g_debug.ski, input, physics);
+        g_sinceStride = step.skated ? 0.0F : g_sinceStride + delta;
 
         SetYaw(player, step.yaw);
         Camera::Apply(player, delta, step.velocity, lookTurn);
@@ -355,6 +382,8 @@ namespace SkiingInSkyrim::Skiing
             .gripLimit = step.gripLimit,
             .skidding = step.skidding,
             .parked = step.parked,
+            .tuck = step.tuck,
+            .skating = g_sinceStride < kSkatingShownSeconds,
         });
 
         g_debug.active = true;

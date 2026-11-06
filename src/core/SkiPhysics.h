@@ -30,8 +30,11 @@ namespace SkiingInSkyrim::Core
         float gravity{ 9.81F };
         // Kinetic friction coefficient of waxed skis sliding along their length.
         float snowFriction{ 0.05F };
-        // Air drag as deceleration per (m/s)^2; sets the top speed on a given slope.
-        float dragPerSpeedSquared{ 0.02F };
+        // Drag as deceleration: dragPerSpeedSquared * v^2 + dragPerSpeedFourth * v^4. The second part is a
+        // speed limiter, next to nothing at cruising speeds and steep at high ones, so gentle slopes can carry
+        // speed while steep ones don't run away. Together they set the top speed on a given slope.
+        float dragPerSpeedSquared{ 0.004F };
+        float dragPerSpeedFourth{ 0.00005F };
         float maxSpeed{ 30.0F };
 
         // Sidecut radius in metres. A carving ski at edge angle t follows an arc of radius sidecut * cos(t).
@@ -66,7 +69,18 @@ namespace SkiingInSkyrim::Core
         float steerDegreesPerSecond{ 120.0F };
         float aimDeadzone{ 0.2F };
         // Pushing firmly the way the skis already point tucks, cutting air drag by this fraction.
-        float tuckDragReduction{ 0.4F };
+        float tuckDragReduction{ 0.6F };
+        // A clean carve (the edge holding, not skidding) pumps: a forward push of carvePump times the turn's
+        // sideways acceleration, so holding a carve through a turn keeps or builds speed. At
+        // most the drag at that moment, so carving can cancel drag but never snow friction.
+        float carvePump{ 0.15F };
+
+        // Skating: on gentle ground (up to skateMaxSlopeDegrees) with the stick pushed forward, each fresh
+        // squeeze of a trigger is a skating stride, pushing you along the skis by up to skateImpulse (m/s),
+        // less the closer you are to skateMaxSpeed, and half as much if it's the same side as the last stride.
+        float skateImpulse{ 1.0F };
+        float skateMaxSpeed{ 6.0F };
+        float skateMaxSlopeDegrees{ 10.0F };
         // With the stick centred, no edge and no skid, flat skis sliding faster than a side-slip swing round
         // toward the direction of travel at up to this rate, so a sideways smear doesn't go on forever.
         // Slow side-slips (falling leaf) are left alone. 0 turns it off.
@@ -76,11 +90,12 @@ namespace SkiingInSkyrim::Core
         // no edge slides on flat skis, full edge holds you, and the trigger travel in between feathers the
         // slip on any slope.
 
-        // Powder: deep snow resists you in proportion to speed (powderDrag, deceleration per m/s, on top of
-        // air drag), pushes back harder against the skis' sides (flat grip times powderSideGrip, so skids,
-        // stops and steered turns bite more), and cushions landings (powderLanding of the impact absorbed).
+        // Powder: deep snow resists you more the faster you plough through it (powderDragPerSpeedFourth * v^4
+        // on top of drag, so it mostly bites at speed on steep runs and leaves gentle cruising alone),
+        // pushes back harder against the skis' sides (flat grip times powderSideGrip, so skids, stops and
+        // steered turns bite more), and cushions landings (powderLanding of the impact absorbed).
         bool  powder{ true };
-        float powderDrag{ 0.15F };
+        float powderDragPerSpeedFourth{ 0.000056F };
         float powderSideGrip{ 2.0F };
         float powderLanding{ 0.5F };
 
@@ -127,6 +142,8 @@ namespace SkiingInSkyrim::Core
         float lastEdgeSide{ 1.0F };   // pivot direction with flat skis on flat ground
         bool  parked{ false };        // stopped while holding skid
         float skidHold{ 0.0F };       // 0..1, how far into the skid stance (builds over pivotBuildSeconds)
+        float lastEdgeTarget{ 0.0F }; // last frame's edge input, to see fresh trigger squeezes
+        float lastSkateSide{ 0.0F };  // side of the last skating stride, 0 before the first
         float commandedSpeed{ 0.0F };
     };
 
@@ -142,6 +159,8 @@ namespace SkiingInSkyrim::Core
         bool  skidding{ false };       // sideways motion exceeded the grip limit
         bool  parked{ false };         // stopped while holding skid
         float tuck{ 0.0F };            // 0..1
+        float pump{ 0.0F };            // m/s^2 of forward push from carving
+        bool  skated{ false };         // a skating stride this frame
     };
 
     // Arc radius of a carving ski at the given edge angle, or infinity when flat.

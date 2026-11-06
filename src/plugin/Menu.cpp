@@ -140,6 +140,15 @@ namespace SkiingInSkyrim::Menu
                 Settings::SetShowOverlay(overlay);
                 Settings::Save();
             }
+            bool trace = Settings::TraceShaking();
+            if (ImGuiMCP::Checkbox("Log jitter trace", &trace)) {
+                Settings::SetTraceShaking(trace);
+                Settings::Save();
+            }
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", "Writes every frame to the log while the character shakes up and down. "
+                                           "Only for chasing jitter; leave off otherwise.");
+            }
             auto camera = Settings::Camera();
             if (ImGuiMCP::Checkbox("Camera follows direction of travel", &camera.enabled)) {
                 Settings::SetCamera(camera);
@@ -155,6 +164,8 @@ namespace SkiingInSkyrim::Menu
             ImGuiMCP::TextWrapped("%s", "Steer with the left stick (or the right, if set above) or W/A/S/D: the skis "
                                         "turn toward where you push, relative to the camera, more firmly the further "
                                         "you push. Push firmly the way the skis already point to tuck and go faster. "
+                                        "On gentle ground, push forward and squeeze the triggers alternately to skate. "
+                                        "Holding a clean carve through a turn keeps your speed up. "
                                         "Leave it centred and the skis carve wherever the edges take them; with no "
                                         "edge either, skis smearing sideways at speed swing back round to where "
                                         "you're going. Steering harder than they can carve skids them round and "

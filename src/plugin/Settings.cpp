@@ -19,8 +19,12 @@ namespace SkiingInSkyrim::Settings
             { "Gravity", "Gravity", "m/s^2. Scales how hard slopes pull you.", &S::gravity, 2.0F, 20.0F, "%.2f" },
             { "SnowFriction", "Snow friction", "Friction coefficient. Slopes gentler than atan(this) won't start a slide.",
                 &S::snowFriction, 0.0F, 0.3F, "%.3f" },
-            { "DragPerSpeedSquared", "Air drag", "Deceleration per (m/s)^2. Lower means a higher top speed.",
+            { "DragPerSpeedSquared", "Air drag", "Deceleration per (m/s)^2. Lower means faster everywhere, most of "
+                                                 "all on gentle slopes.",
                 &S::dragPerSpeedSquared, 0.0F, 0.05F, "%.4f" },
+            { "DragPerSpeedFourth", "Speed limiter", "Deceleration per (m/s)^4: next to nothing at cruising speeds, "
+                                                     "steep at high ones. Lower means faster on steep runs.",
+                &S::dragPerSpeedFourth, 0.0F, 0.0003F, "%.6f" },
             { "MaxSpeed", "Max speed", "m/s. Hard cap.", &S::maxSpeed, 5.0F, 60.0F, "%.1f" },
             { "SidecutRadius", "Sidecut radius", "Metres. A carving ski follows an arc of sidecut * cos(edge angle); "
                                                  "smaller carves tighter.",
@@ -61,14 +65,27 @@ namespace SkiingInSkyrim::Settings
             { "TuckDragReduction", "Tuck", "Fraction of air drag cut by tucking (pushing firmly the way the skis "
                                            "point). Higher means faster in a tuck; 0 is off.",
                 &S::tuckDragReduction, 0.0F, 0.8F, "%.2f" },
+            { "CarvePump", "Carve pump", "A clean carve pushes you forward by this times the turn's sideways "
+                                         "acceleration, so holding a carve through a turn keeps or builds speed. 0 is "
+                                         "off.",
+                &S::carvePump, 0.0F, 0.3F, "%.2f" },
+            { "SkateImpulse", "Skate stride", "m/s each skating stride adds from a standstill (on gentle ground, stick "
+                                              "pushed forward, squeeze the triggers alternately). 0 is off.",
+                &S::skateImpulse, 0.0F, 3.0F, "%.2f" },
+            { "SkateMaxSpeed", "Skate top speed", "m/s. Strides push less the closer you are to this, and not at all "
+                                                  "beyond it.",
+                &S::skateMaxSpeed, 1.0F, 12.0F, "%.1f" },
+            { "SkateMaxSlopeDegrees", "Skate max slope", "Degrees. Steeper than this, the triggers only edge.",
+                &S::skateMaxSlopeDegrees, 0.0F, 25.0F, "%.0f" },
             { "SelfAlignDegreesPerSecond", "Self-align rate", "Degrees per second flat skis smearing sideways at speed "
                                                               "swing round to where you're going, with the stick centred "
                                                               "and nothing held. Slow side-slips are left alone; 0 is off.",
                 &S::selfAlignDegreesPerSecond, 0.0F, 180.0F, "%.0f" },
-            { "PowderDrag", "Powder drag", "Deceleration per m/s of speed from ploughing through deep snow, when "
-                                           "powder is on. Higher means slower; 0.15 takes about a fifth off top speed "
-                                           "on steep runs.",
-                &S::powderDrag, 0.0F, 0.5F, "%.2f" },
+            { "PowderDragPerSpeedFourth", "Powder drag", "Deceleration per (m/s)^4 from ploughing through deep snow, "
+                                                         "when powder is on, on top of drag. It grows steeply with "
+                                                         "speed, so it bites on fast steep runs and barely touches "
+                                                         "gentle cruising.",
+                &S::powderDragPerSpeedFourth, 0.0F, 0.0003F, "%.6f" },
             { "PowderSideGrip", "Powder side grip", "Flat grip is multiplied by this in powder: skids, stops and "
                                                     "steered turns bite harder.",
                 &S::powderSideGrip, 1.0F, 4.0F, "%.2f" },
@@ -153,6 +170,7 @@ namespace SkiingInSkyrim::Settings
             std::array<std::string, kBindingCount>  bindingNames;
             bool                                    showOverlay{ false };
             bool                                    aimWithRightStick{ false };
+            bool                                    traceShaking{ false };
         };
 
         std::mutex g_lock;
@@ -251,6 +269,9 @@ namespace SkiingInSkyrim::Settings
             if (const auto value = ini.GetInt("Display", "ShowOverlay")) {
                 loaded.showOverlay = *value != 0;
             }
+            if (const auto value = ini.GetInt("Debug", "TraceShaking")) {
+                loaded.traceShaking = *value != 0;
+            }
             spdlog::info("settings loaded from {}", kPath);
         } else {
             spdlog::info("no {}, using defaults", kPath);
@@ -285,6 +306,9 @@ namespace SkiingInSkyrim::Settings
         text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
+        text += "[Debug]\n";
+        text += "; Log every frame while the character shakes up and down (1 on, 0 off). Only for chasing jitter.\n";
+        text += fmt::format("TraceShaking = {}\n\n", state.traceShaking ? 1 : 0);
         text += "[Camera]\n";
         text += "; Third-person camera follows your direction of travel while skiing (1 on, 0 off).\n";
         text += fmt::format("FollowTravel = {}\n", state.camera.enabled ? 1 : 0);
@@ -363,6 +387,18 @@ namespace SkiingInSkyrim::Settings
     {
         std::scoped_lock lock(g_lock);
         g_state.showOverlay = show;
+    }
+
+    bool TraceShaking()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.traceShaking;
+    }
+
+    void SetTraceShaking(bool trace)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.traceShaking = trace;
     }
 
     bool AimWithRightStick()

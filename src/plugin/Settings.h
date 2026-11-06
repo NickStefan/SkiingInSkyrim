@@ -85,6 +85,10 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] bool ShowOverlay();
     void               SetShowOverlay(bool show);
 
+    // Per-frame trace in the log while the character shakes vertically.
+    [[nodiscard]] bool TraceShaking();
+    void               SetTraceShaking(bool trace);
+
     // Steering on the right stick instead of the left; the left stick then looks around.
     [[nodiscard]] bool AimWithRightStick();
     void               SetAimWithRightStick(bool right);

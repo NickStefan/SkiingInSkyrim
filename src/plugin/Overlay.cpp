@@ -21,6 +21,7 @@ namespace SkiingInSkyrim::Overlay
         constexpr float kCompassRadius = 60.0F;
         // The travel marker reaches its full length at this speed.
         constexpr float kFullScaleSpeed = 15.0F;
+        constexpr float kMphPerMetrePerSecond = 2.23694F;
 
         const ImU32 kBackground = IM_COL32(0, 0, 0, 140);
         const ImU32 kFaint = IM_COL32(255, 255, 255, 60);
@@ -29,6 +30,8 @@ namespace SkiingInSkyrim::Overlay
         const ImU32 kFallLine = IM_COL32(90, 160, 255, 255);
         const ImU32 kGrip = IM_COL32(110, 220, 110, 255);
         const ImU32 kSkid = IM_COL32(255, 160, 50, 255);
+        const ImU32 kSkate = IM_COL32(90, 220, 255, 255);
+        const ImU32 kFaintText = IM_COL32(230, 230, 230, 150);
 
         // A save is loaded and on screen: no main or loading menu, and the player's 3D exists.
         bool InGame()
@@ -142,10 +145,14 @@ namespace SkiingInSkyrim::Overlay
         }
 
         Draw::AddRectFilled(list, origin, Add(origin, { kWidth, kHeight }), kBackground, 6.0F, 0);
+        Text(list, Add(origin, { 10.0F, 6.0F }), data.skating ? kSkate : kFaintText, data.skating ? "skating" : "skiing");
         Compass(list, Add(origin, { 95.0F, 95.0F }), data);
+        Text(list, Add(origin, { 10.0F, 168.0F }), kText,
+            fmt::format("{:.0f} mph", Core::Length(data.velocity) * kMphPerMetrePerSecond));
         EdgeGauge(list, Add(origin, { 240.0F, 55.0F }), data);
         Text(list, Add(origin, { 205.0F, 85.0F }), kText, fmt::format("edge {:+.0f}", data.edgeDegrees));
         PivotBar(list, Add(origin, { 240.0F, 125.0F }), data);
         Text(list, Add(origin, { 205.0F, 135.0F }), kText, fmt::format("pivot {:+.0f}", data.pivotDegrees));
+        Text(list, Add(origin, { 205.0F, 160.0F }), kText, fmt::format("lean {:.0f}%", data.tuck * 100.0F));
     }
 }

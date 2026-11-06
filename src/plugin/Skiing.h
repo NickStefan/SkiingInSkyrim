@@ -46,6 +46,8 @@ namespace SkiingInSkyrim::Skiing
         float       gripLimit{ 0.0F };
         bool        skidding{ false };
         bool        parked{ false };
+        float       tuck{ 0.0F };  // forward lean, 0..1
+        bool        skating{ false };
     };
 
     // Any thread.

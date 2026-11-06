@@ -65,6 +65,12 @@ namespace SkiingInSkyrim::Core
         constexpr float kAlignStartSpeed = kFeatherFullSpeed;
         constexpr float kAlignFullSpeed = kFeatherNoneSpeed;
 
+        // A trigger squeezed past this (fraction of full edge) from below it is a skating stride.
+        constexpr float kSkateSqueeze = 0.5F;
+        // Skating needs the stick pushed at least this firmly within kSkateAimDegrees of the skis.
+        constexpr float kSkateAimStrength = 0.3F;
+        constexpr float kSkateAimDegrees = 45.0F;
+
         // Tucking: how firm a push (aim strength) and how close to where the skis point (cosine of the angle).
         constexpr float kTuckStartStrength = 0.5F;
         constexpr float kTuckFullStrength = 0.9F;
@@ -327,8 +333,28 @@ namespace SkiingInSkyrim::Core
             result.blocked = true;
         }
 
-        const float speed = Length(velocity);
-        const float drag = settings.dragPerSpeedSquared * (1.0F - std::clamp(settings.tuckDragReduction, 0.0F, 1.0F) * tuck);
+        // Skating: a fresh squeeze of a trigger with the stick pushed forward on gentle ground is a stride.
+        const bool squeezed = std::fabs(edgeTarget) >= kSkateSqueeze && std::fabs(state.lastEdgeTarget) < kSkateSqueeze;
+        state.lastEdgeTarget = edgeTarget;
+        if (squeezed && input.grounded && !input.skidHeld && aimStrength >= kSkateAimStrength &&
+            std::cos(input.aimYaw - yaw) >= std::cos(kSkateAimDegrees * kRadians) && settings.skateMaxSpeed > 0.0F) {
+            const auto  n = input.hasNormal ? input.normal : Vec3{ 0.0F, 0.0F, 1.0F };
+            const float speedNow = Length(velocity);
+            if (n.z >= std::cos(settings.skateMaxSlopeDegrees * kRadians) && speedNow < settings.skateMaxSpeed) {
+                const float side = std::copysign(1.0F, edgeTarget);
+                const float alternate = side != state.lastSkateSide ? 1.0F : 0.5F;
+                const float push = settings.skateImpulse * alternate * (1.0F - speedNow / settings.skateMaxSpeed);
+                velocity = Add(velocity, Scale(Forward(yaw), push));
+                state.lastSkateSide = side;
+                result.skated = true;
+            }
+        }
+
+        // Above the cap the v^4 terms would brake past it in a single frame.
+        const float speed = std::min(Length(velocity), settings.maxSpeed);
+        const float drag = (settings.dragPerSpeedSquared + settings.dragPerSpeedFourth * speed * speed) *
+                           (1.0F - std::clamp(settings.tuckDragReduction, 0.0F, 1.0F) * tuck);
+        const float powderDrag = settings.powder && input.grounded ? settings.powderDragPerSpeedFourth * speed * speed : 0.0F;
         if (input.grounded) {
             const auto n = input.hasNormal ? input.normal : Vec3{ 0.0F, 0.0F, 1.0F };
             const float normalForce = settings.gravity * std::max(0.0F, n.z);
@@ -338,13 +364,18 @@ namespace SkiingInSkyrim::Core
             }
             result.gripLimit = grip;
 
-            // The edged ski follows its arc, but only as tightly as the grip can hold at this speed.
+            // The edged ski follows its arc, but only as tightly as the grip can hold at this speed. Held
+            // cleanly, the carve pumps you forward.
             const float radius = CarveRadius(edgeAngle, settings);
+            float       pump = 0.0F;
             if (std::isfinite(radius)) {
                 const float along = std::max(0.0F, Dot(velocity, Forward(yaw)));  // skis don't carve backwards
                 const float demand = along * along / radius;
                 const float held = demand > grip ? grip / demand : 1.0F;
                 yaw += std::copysign(1.0F, state.edge) * along / radius * held * dt;
+                if (held >= 1.0F && !input.skidHeld) {
+                    pump = std::min(std::max(0.0F, settings.carvePump) * demand, (drag + powderDrag) * speed * speed);
+                }
             }
 
             // Moving, the skis never point more than across the direction of travel: when a carve turns them
@@ -376,13 +407,16 @@ namespace SkiingInSkyrim::Core
                 result.skidding = true;
             }
             along += Dot(downhill, forward) * dt;
+            if (pump > 0.0F && !result.skidding && along > 0.0F) {
+                along += pump * dt;
+                result.pump = pump;
+            }
             const float brake = stance * grip * dt;
             along = std::fabs(along) <= brake ? 0.0F : along - std::copysign(brake, along);
             along = std::copysign(std::max(0.0F, std::fabs(along) - settings.snowFriction * normalForce * dt), along);
 
             velocity = Add(Scale(forward, along), Scale(right, newSide));
-            const float powderDrag = settings.powder ? settings.powderDrag * speed : 0.0F;
-            velocity = Decelerate(velocity, drag * speed * speed + powderDrag, dt);
+            velocity = Decelerate(velocity, (drag + powderDrag) * speed * speed, dt);
         } else {
             velocity = Decelerate(velocity, drag * speed * speed, dt);
         }

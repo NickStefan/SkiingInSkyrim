@@ -106,7 +106,10 @@ TEST_CASE("pointing down a slope accelerates toward the drag-limited speed")
     CHECK_NEAR(skier.Speed(), expectedAcceleration * kFrame, 1e-3F);
 
     skier.Run(60.0F, SlopeDownY(20.0F));
-    const float terminal = std::sqrt(expectedAcceleration / skier.settings.dragPerSpeedSquared);
+    // Solves dragPerSpeedSquared * v^2 + dragPerSpeedFourth * v^4 = acceleration for v^2.
+    const float a = skier.settings.dragPerSpeedSquared;
+    const float c = skier.settings.dragPerSpeedFourth;
+    const float terminal = std::sqrt((std::sqrt(a * a + 4.0F * c * expectedAcceleration) - a) / (2.0F * c));
     CHECK_NEAR(skier.Speed(), terminal, 0.3F);
     CHECK(skier.state.velocity.y > 0.0F);
 }
@@ -156,7 +159,8 @@ TEST_CASE("a clean carve follows the sidecut arc and keeps its speed")
     CHECK(!skier.last.skidding);
 
     // Only snow friction and drag slow it; turning itself costs (almost) nothing.
-    const float friction = 0.05F * 9.81F + skier.settings.dragPerSpeedSquared * 64.0F;
+    const float friction = 0.05F * 9.81F + skier.settings.dragPerSpeedSquared * 64.0F +
+                           skier.settings.dragPerSpeedFourth * 4096.0F;
     CHECK(skier.Speed() > 8.0F - friction - 0.05F);
 }
 
@@ -211,7 +215,8 @@ TEST_CASE("hockey stop: skis across the direction of travel on hard edge brake i
 
     skier.Run(0.25F, kFlat, { .edge = 1.0F });
     CHECK(skier.last.skidding);
-    CHECK_NEAR(skier.Speed(), 10.0F - (grip + skier.settings.dragPerSpeedSquared * 90.0F) * 0.25F, 0.4F);
+    CHECK_NEAR(skier.Speed(), 10.0F - (grip + skier.settings.dragPerSpeedSquared * 90.0F +
+                                                    skier.settings.dragPerSpeedFourth * 8100.0F) * 0.25F, 0.4F);
     CHECK_NEAR(skier.state.velocity.x, 0.0F, 1e-4F);  // the direction of travel didn't swing round
 
     skier.Run(1.0F, kFlat, { .edge = 1.0F });
@@ -771,4 +776,74 @@ TEST_CASE("powder is slower, bites harder sideways and cushions landings")
     const Vec3 drop{ 0.0F, 0.0F, -14.0F };
     CHECK_NEAR(LandingHeight(drop, kFlat, powder.settings), ImpactHeight(drop, kFlat, 9.81F) * 0.5F, 1e-3F);
     CHECK_NEAR(LandingHeight(drop, kFlat, packed.settings), ImpactHeight(drop, kFlat, 9.81F), 1e-3F);
+}
+
+TEST_CASE("powder bites at speed on steep runs but leaves gentle cruising mostly alone")
+{
+    Skier packedGentle;
+    Skier powderGentle;
+    powderGentle.settings.powder = true;
+    packedGentle.Run(40.0F, SlopeDownY(10.0F));
+    powderGentle.Run(40.0F, SlopeDownY(10.0F));
+    CHECK(powderGentle.Speed() > packedGentle.Speed() * 0.75F);
+}
+
+TEST_CASE("holding a clean carve pumps speed, a skid doesn't, and it can't build forever on the flat")
+{
+    Skier pumped;  // carving on the flat, slow enough for the edge to hold
+    pumped.Edged(0.6F).state.velocity = { 0.0F, 8.0F };
+    Skier flat = pumped;
+    flat.settings.carvePump = 0.0F;
+    pumped.Run(1.0F, kFlat, { .edge = 0.6F });
+    flat.Run(1.0F, kFlat, { .edge = 0.6F });
+    CHECK(pumped.last.pump > 0.0F);
+    CHECK(pumped.Speed() > flat.Speed() + 0.3F);
+    CHECK(pumped.Speed() < 8.0F);  // cancels drag, not snow friction
+
+    Skier skidding;  // carving harder than the grip holds
+    skidding.Edged(1.0F).state.velocity = { 0.0F, 25.0F };
+    skidding.Step(kFlat, { .edge = 1.0F });
+    CHECK_NEAR(skidding.last.pump, 0.0F, 1e-6F);
+
+    Skier forever;  // full edge round and round on the flat: still slows down
+    forever.Edged(1.0F).state.velocity = { 0.0F, 8.0F };
+    forever.Run(20.0F, kFlat, { .edge = 1.0F });
+    CHECK(forever.Speed() < 8.0F);
+}
+
+TEST_CASE("on the flat, alternating trigger squeezes with the stick forward skate you along")
+{
+    Skier skater;
+    float side = 1.0F;
+    int   strides = 0;
+    for (int i = 0; i < 4 * 60; ++i) {
+        const bool squeezing = (i % 30) < 10;  // a squeeze every half second, alternating sides
+        if (i % 30 == 0) {
+            side = -side;
+        }
+        skater.Step(kFlat, { .edge = squeezing ? side : 0.0F, .aim = 1.0F, .aimYaw = skater.yaw });
+        strides += skater.last.skated ? 1 : 0;
+    }
+    CHECK(strides == 8);
+    CHECK(skater.Speed() > 2.5F);
+    CHECK(skater.Speed() < skater.settings.skateMaxSpeed);
+
+    Skier sameSide;  // the same trigger every time pushes half as hard
+    Skier first;
+    for (auto* skier : { &sameSide, &first }) {
+        skier->Step(kFlat, { .edge = 1.0F, .aim = 1.0F });
+        skier->Run(0.2F, kFlat, { .aim = 1.0F });
+    }
+    sameSide.Step(kFlat, { .edge = 1.0F, .aim = 1.0F });
+    first.Step(kFlat, { .edge = -1.0F, .aim = 1.0F });
+    CHECK(sameSide.last.skated);
+    CHECK(first.Speed() > sameSide.Speed());
+
+    Skier noStick;  // squeezing without pushing forward is just edging
+    noStick.Step(kFlat, { .edge = 1.0F });
+    CHECK(!noStick.last.skated);
+
+    Skier steep;  // not on a real slope
+    steep.Step(SlopeDownY(25.0F), { .edge = 1.0F, .aim = 1.0F });
+    CHECK(!steep.last.skated);
 }

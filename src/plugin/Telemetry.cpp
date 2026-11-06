@@ -6,6 +6,7 @@
 #include "plugin/Havok.h"
 #include "plugin/Input.h"
 #include "plugin/Movement.h"
+#include "plugin/Settings.h"
 #include "plugin/Skiing.h"
 #include "plugin/SkiingState.h"
 #include "plugin/Tdm.h"
@@ -116,6 +117,9 @@ namespace SkiingInSkyrim::Telemetry
         // Frame-to-frame shake of a tracked point: how much its velocity changes from one frame to the next
         // (m/s), as RMS and worst over a sample window. Smooth skiing changes it by about acceleration * dt
         // (well under 0.5 m/s); jitter shows up far above that.
+        // Frames shorter than this (seconds) turn a normal movement into an absurd speed; shake skips them.
+        constexpr float kShortestFrame = 0.002F;
+
         struct Shake
         {
             std::optional<Core::Vec3> last;
@@ -127,7 +131,11 @@ namespace SkiingInSkyrim::Telemetry
 
             void Add(const Core::Vec3& point, float delta)
             {
-                if (last && delta > 0.0F) {
+                if (delta < kShortestFrame) {
+                    Lose();
+                    return;
+                }
+                if (last) {
                     Core::Vec3 velocity{ (point.x - last->x) / delta / kUnitsPerMetre,
                         (point.y - last->y) / delta / kUnitsPerMetre, (point.z - last->z) / delta / kUnitsPerMetre };
                     if (verticalOnly) {
@@ -257,6 +265,7 @@ namespace SkiingInSkyrim::Telemetry
             FrameTrace    trace;
             std::uint32_t lastState{ ~0U };
             int           stateFlips{ 0 };
+            int           strides{ 0 };
             float         maxDelta{ 0.0F };
             float         sinceSample{ kSampleInterval };
             bool          wasEnabled{ false };
@@ -297,7 +306,12 @@ namespace SkiingInSkyrim::Telemetry
                         controller->context.currentState == RE::hkpCharacterStateTypes::kJumping, { at.x, at.y, at.z },
                         ToVec3(frameVelocity), ski, delta);
                     TrackShake(player, controller, delta);
-                    trace.Update(player, controller, delta, ski);
+                    strides += ski.step.skated ? 1 : 0;
+                    if (Settings::TraceShaking()) {
+                        trace.Update(player, controller, delta, ski);
+                    } else {
+                        trace.Reset();
+                    }
                 } else {
                     air = {};
                     for (auto* shake : { &body, &bodyVertical, &model, &cameraShake }) {
@@ -316,6 +330,7 @@ namespace SkiingInSkyrim::Telemetry
                 const int flips = std::exchange(supportFlips, 0);
                 const int animFlips = std::exchange(stateFlips, 0);
                 const float worstDelta = std::exchange(maxDelta, 0.0F);
+                const int   strideCount = std::exchange(strides, 0);
 
                 RE::hkVector4 havokVelocity;
                 controller->GetLinearVelocityImpl(havokVelocity);
@@ -346,7 +361,7 @@ namespace SkiingInSkyrim::Telemetry
                     "normal=({:+.3f},{:+.3f},{:+.3f}) supportNorm=({:+.3f},{:+.3f},{:+.3f}) "
                     "vel=({:+.2f},{:+.2f},{:+.2f})m/s ground-speed={:.2f}m/s move=({:+.2f},{:+.2f},{:+.2f}) yaw={:.0f} "
                     "keys={} keyAge={:.2f} stick=({:+.2f},{:+.2f}) stickAge={:.2f} rstick=({:+.2f},{:+.2f}) tdm={} "
-                    "pos=({:.0f},{:.0f},{:.0f}) dt={:.4f} tuck={:.2f} "
+                    "pos=({:.0f},{:.0f},{:.0f}) dt={:.4f} tuck={:.2f} pump={:.2f} strides={} "
                     "| shake rms/max m/s: body={} body-z={} model={} cam={} | cam-dist={:.2f}m cam-up={:+.2f}m "
                     "state-flips={} dt-max={:.4f}",
                     transition ? "*" : "", ski.active ? "active" : ski.inactiveReason, ContactName(estimate.contact),
@@ -364,7 +379,7 @@ namespace SkiingInSkyrim::Telemetry
                     velocity.x, velocity.y, velocity.z, Core::HorizontalLength(velocity),
                     move.movement.x, move.movement.y, move.movement.z, yaw * kDegrees,
                     keys, raw.keyAge, raw.stickX, raw.stickY, raw.stickAge, raw.rightStickX, raw.rightStickY,
-                    Tdm::Status(), position.x, position.y, position.z, delta, ski.step.tuck, body.Take(),
+                    Tdm::Status(), position.x, position.y, position.z, delta, ski.step.tuck, ski.step.pump, strideCount, body.Take(),
                     bodyVertical.Take(), model.Take(), cameraShake.Take(), cameraDistance, cameraUp, animFlips, worstDelta);
             }
 
