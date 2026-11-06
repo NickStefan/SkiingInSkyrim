@@ -17,6 +17,14 @@ namespace SkiingInSkyrim::Movement
     // Latest ModifyMovementData output, after every hook below ours.
     Sample Last();
 
+    // ModifyMovementData calls since the last TakeCalls(), and the delta the latest was given.
+    struct Calls
+    {
+        int   count{ 0 };
+        float delta{ 0.0F };
+    };
+    Calls TakeCalls();
+
     struct ChainInfo
     {
         bool        installed{ false };

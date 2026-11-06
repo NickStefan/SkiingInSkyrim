@@ -10,6 +10,7 @@ namespace SkiingInSkyrim::Movement
 
         std::mutex g_sampleLock;
         Sample     g_sample;
+        Calls      g_calls;
 
         std::mutex g_chainLock;
         ChainInfo  g_chain;
@@ -22,6 +23,8 @@ namespace SkiingInSkyrim::Movement
                 Skiing::ApplyMovement(player, movement, rotation);
                 std::scoped_lock lock(g_sampleLock);
                 g_sample = { { movement.x, movement.y, movement.z }, { rotation.x, rotation.y, rotation.z } };
+                ++g_calls.count;
+                g_calls.delta = delta;
             }
 
             static inline REL::Relocation<decltype(thunk)> func;
@@ -94,6 +97,12 @@ namespace SkiingInSkyrim::Movement
     {
         std::scoped_lock lock(g_sampleLock);
         return g_sample;
+    }
+
+    Calls TakeCalls()
+    {
+        std::scoped_lock lock(g_sampleLock);
+        return std::exchange(g_calls, Calls{ 0, g_calls.delta });
     }
 
     ChainInfo GetChainInfo()

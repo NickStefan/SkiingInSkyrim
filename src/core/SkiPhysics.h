@@ -90,6 +90,11 @@ namespace SkiingInSkyrim::Core
         float groundHugSeconds{ 0.35F };
         float groundHugGravity{ 35.0F };
         float groundHugMaxDropSpeed{ 2.0F };  // m/s the pull may add beyond following the slope
+        // Keep the character at the physics body's height every frame. Descending steep slopes the game lets the
+        // character's position fall behind the body and catches it up every few frames, which shows as a
+        // vertical jitter.
+        bool smoothHeight{ true };
+
         // If the engine delivers less than this fraction of what we asked for, something is in the way.
         float blockedRatio{ 0.75F };
         // Per-frame blend toward the delivered velocity while blocked.

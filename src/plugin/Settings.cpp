@@ -94,6 +94,9 @@ namespace SkiingInSkyrim::Settings
             { "Powder", "Powder", "Deep snow everywhere: slower, skids and stops bite harder, landings are softer "
                                   "(see the Powder sliders).",
                 &S::powder },
+            { "SmoothHeight", "Smooth steep slopes", "Keep the character at the physics body's height every frame, "
+                                                     "so fast descents of steep slopes don't jitter up and down.",
+                &S::smoothHeight },
         };
 
         using C = Core::CameraFollowSettings;

@@ -207,6 +207,67 @@ namespace SkiingInSkyrim::Skiing
             g_debug.fallMetres = (controller->fallStartHeight / *g_fallUnits - position.z) / kUnitsPerMetre;
         }
 
+        // The game moves the player's position with the (horizontal) movement and only catches up with the Havok
+        // body's height every few frames, so descending a steep slope fast the character rises off the snow and
+        // drops back about 12 times a second. Keep it at the body's height instead. The offset between the two
+        // is learned where the game has them agree: on gentle ground, and the frames it catches up.
+        struct HeightSync
+        {
+            std::optional<float> offset;
+            std::optional<float> lastZ;
+            std::optional<float> lastBodyZ;
+        };
+        HeightSync g_height;
+
+        constexpr float kGentleNormalZ = 0.966F;  // cos 15 degrees
+        // Game units per second, times the frame time, so they mean the same at any frame rate: the position's
+        // and the body's height changing this close together agree; the position dropping this much faster than
+        // the body is the game catching up.
+        constexpr float kAgreeSpeed = 30.0F;
+        constexpr float kCatchUpSpeed = 600.0F;
+
+        float BodyHeight(RE::bhkCharacterController* controller)
+        {
+            RE::hkVector4 body;
+            controller->GetPositionImpl(body, false);
+            return body.quad.m128_f32[2] / RE::bhkWorld::GetWorldScale();
+        }
+
+        float SyncHeight(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
+            const Core::GroundEstimate& ground, const Core::SkiSettings& physics, float delta)
+        {
+            const float bodyZ = BodyHeight(controller);
+            float&      z = player->data.location.z;
+            if (g_height.lastZ && g_height.lastBodyZ && delta > 0.0F) {
+                const float moved = z - *g_height.lastZ;
+                const float bodyMoved = bodyZ - *g_height.lastBodyZ;
+                const bool  supported =
+                    controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported;
+                const bool gentle = supported && ground.hasNormal && ground.normal.z >= kGentleNormalZ &&
+                                    std::fabs(moved - bodyMoved) < kAgreeSpeed * delta;
+                if (gentle || moved - bodyMoved < -kCatchUpSpeed * delta) {
+                    const float learned = z - bodyZ;
+                    if (!g_height.offset || std::fabs(*g_height.offset - learned) > 2.0F) {
+                        spdlog::info("character sits {:.1f} units from the physics body ({})", learned,
+                            gentle ? "gentle ground" : "caught up");
+                    }
+                    g_height.offset = learned;
+                }
+            }
+
+            float lowered = 0.0F;
+            if (physics.smoothHeight && g_height.offset && ground.contact == Core::Contact::Grounded) {
+                const float target = bodyZ + *g_height.offset;
+                if (z > target) {
+                    lowered = z - target;
+                    z = target;
+                }
+            }
+            g_height.lastZ = z;
+            g_height.lastBodyZ = bodyZ;
+            return lowered;
+        }
+
         void SetYaw(RE::PlayerCharacter* player, float yaw)
         {
             if (!Tdm::SetPlayerYaw(yaw)) {
@@ -236,6 +297,8 @@ namespace SkiingInSkyrim::Skiing
         const auto position = player->GetPosition();
         const bool starting = !g_debug.active;
         if (starting) {
+            g_height.lastZ.reset();
+            g_height.lastBodyZ.reset();
             g_ground.Reset();
             g_skidFromToggle = true;
             g_stick = {};
@@ -275,6 +338,7 @@ namespace SkiingInSkyrim::Skiing
         SetCommand({ true, step.velocity });
         g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);
         SoftenFall(controller, position, velocity, ground, physics);
+        g_debug.heightCorrection = SyncHeight(player, controller, ground, physics, delta);
         SetOverlay({
             .active = true,
             .inactiveReason = "",

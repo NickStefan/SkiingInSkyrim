@@ -17,9 +17,9 @@ namespace SkiingInSkyrim::Overlay
         constexpr float kLeft = 20.0F;
         constexpr float kTop = 20.0F;
         constexpr float kWidth = 300.0F;
-        constexpr float kHeight = 250.0F;
+        constexpr float kHeight = 190.0F;
         constexpr float kCompassRadius = 60.0F;
-        // Velocity arrow reaches the compass rim at this speed.
+        // The travel marker reaches its full length at this speed.
         constexpr float kFullScaleSpeed = 15.0F;
 
         const ImU32 kBackground = IM_COL32(0, 0, 0, 140);
@@ -30,15 +30,19 @@ namespace SkiingInSkyrim::Overlay
         const ImU32 kGrip = IM_COL32(110, 220, 110, 255);
         const ImU32 kSkid = IM_COL32(255, 160, 50, 255);
 
+        // A save is loaded and on screen: no main or loading menu, and the player's 3D exists.
+        bool InGame()
+        {
+            auto* ui = RE::UI::GetSingleton();
+            if (!ui || ui->IsMenuOpen(RE::MainMenu::MENU_NAME) || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) {
+                return false;
+            }
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            return player && player->Is3DLoaded();
+        }
+
         ImVec2 Add(ImVec2 a, ImVec2 b) { return { a.x + b.x, a.y + b.y }; }
         ImVec2 Scale(ImVec2 v, float s) { return { v.x * s, v.y * s }; }
-
-        // Screen direction of a world direction, with the skis pointing up the screen.
-        ImVec2 RelativeToSkis(Core::Vec2 direction, float yaw)
-        {
-            const float angle = std::atan2(direction.x, direction.y) - yaw;
-            return { std::sin(angle), -std::cos(angle) };
-        }
 
         void Arrow(ImGuiMCP::ImDrawList* list, ImVec2 from, ImVec2 direction, float length, ImU32 color, float thickness)
         {
@@ -55,28 +59,41 @@ namespace SkiingInSkyrim::Overlay
             Draw::AddText(list, at, color, text.c_str());
         }
 
-        // Top-down: skis up the screen, the fall line and the direction of travel relative to them.
+        // Screen direction of a world direction, with the reference direction (the fall line) up the screen.
+        ImVec2 Relative(Core::Vec2 direction, float reference)
+        {
+            const float angle = std::atan2(direction.x, direction.y) - reference;
+            return { std::sin(angle), -std::cos(angle) };
+        }
+
+        // Top-down with the fall line fixed up the screen: the skis through the centre, and the direction of
+        // travel as a marker outside the rim. On flat ground the last fall line seen is kept.
         void Compass(ImGuiMCP::ImDrawList* list, ImVec2 center, const Skiing::OverlayData& data)
         {
-            Draw::AddCircle(list, center, kCompassRadius, kFaint, 48, 1.5F);
-            Draw::AddLine(list, Add(center, { -kCompassRadius, 0.0F }), Add(center, { kCompassRadius, 0.0F }), kFaint, 1.0F);
-
-            const float downhill = Core::Length(data.downhill);
-            if (data.grounded && data.slopeDegrees > 1.0F && downhill > 1e-4F) {
-                const float steepness = std::min(1.0F, std::sin(data.slopeDegrees * kRadians) / std::sin(45.0F * kRadians));
-                Arrow(list, center, RelativeToSkis(data.downhill, data.yaw), kCompassRadius * (0.25F + 0.75F * steepness),
-                    kFallLine, 2.0F);
+            static float fallLine = 0.0F;
+            if (data.grounded && data.slopeDegrees > 1.0F && Core::Length(data.downhill) > 1e-4F) {
+                fallLine = std::atan2(data.downhill.x, data.downhill.y);
             }
 
-            Draw::AddLine(list, Add(center, { 0.0F, kCompassRadius * 0.8F }), Add(center, { 0.0F, -kCompassRadius * 0.8F }),
+            Draw::AddCircle(list, center, kCompassRadius, kFaint, 48, 1.5F);
+            const float  steepness = std::min(1.0F, std::sin(data.slopeDegrees * kRadians) / std::sin(45.0F * kRadians));
+            const ImVec2 rim{ center.x, center.y - kCompassRadius };
+            Arrow(list, Add(rim, { 0.0F, 14.0F }), { 0.0F, -1.0F }, 14.0F + 10.0F * steepness, kFallLine, 3.0F);
+
+            const ImVec2 ski = Relative(Core::Forward(data.yaw), fallLine);
+            Draw::AddLine(list, Add(center, Scale(ski, -kCompassRadius * 0.8F)), Add(center, Scale(ski, kCompassRadius * 0.8F)),
                 kSki, 5.0F);
-            Draw::AddTriangleFilled(list, Add(center, { 0.0F, -kCompassRadius * 0.95F }),
-                Add(center, { -5.0F, -kCompassRadius * 0.8F }), Add(center, { 5.0F, -kCompassRadius * 0.8F }), kSki);
+            const ImVec2 side{ -ski.y, ski.x };
+            const ImVec2 tip = Add(center, Scale(ski, kCompassRadius * 0.95F));
+            const ImVec2 base = Add(center, Scale(ski, kCompassRadius * 0.8F));
+            Draw::AddTriangleFilled(list, tip, Add(base, Scale(side, 5.0F)), Add(base, Scale(side, -5.0F)), kSki);
 
             const float speed = Core::Length(data.velocity);
             if (speed > 0.2F) {
-                const float length = kCompassRadius * std::min(1.0F, 0.2F + 0.8F * speed / kFullScaleSpeed);
-                Arrow(list, center, RelativeToSkis(data.velocity, data.yaw), length, data.skidding ? kSkid : kGrip, 3.0F);
+                const ImVec2 travel = Relative(data.velocity, fallLine);
+                const float  length = 10.0F + 14.0F * std::min(1.0F, speed / kFullScaleSpeed);
+                Arrow(list, Add(center, Scale(travel, kCompassRadius + 4.0F)), travel, length,
+                    data.skidding ? kSkid : kGrip, 3.0F);
             }
         }
 
@@ -109,7 +126,7 @@ namespace SkiingInSkyrim::Overlay
 
     void __stdcall Render()
     {
-        if (!Settings::ShowOverlay()) {
+        if (!Settings::ShowOverlay() || !InGame()) {
             return;
         }
         auto* list = ImGuiMCP::GetForegroundDrawList();
@@ -125,23 +142,10 @@ namespace SkiingInSkyrim::Overlay
         }
 
         Draw::AddRectFilled(list, origin, Add(origin, { kWidth, kHeight }), kBackground, 6.0F, 0);
-        Compass(list, Add(origin, { 80.0F, 80.0F }), data);
-        EdgeGauge(list, Add(origin, { 230.0F, 50.0F }), data);
-        Text(list, Add(origin, { 185.0F, 80.0F }), kText, fmt::format("edge {:+.0f} deg", data.edgeDegrees));
-        PivotBar(list, Add(origin, { 230.0F, 120.0F }), data);
-        Text(list, Add(origin, { 185.0F, 130.0F }), kText, fmt::format("pivot {:+.0f} deg", data.pivotDegrees));
-
-        const float speed = Core::Length(data.velocity);
-        float       y = kTop + 160.0F;
-        const auto  line = [&](ImU32 color, const std::string& text) {
-            Text(list, { kLeft + 10.0F, y }, color, text);
-            y += 17.0F;
-        };
-        line(kText, fmt::format("speed {:.1f} m/s   slope {:.0f} deg", speed, data.slopeDegrees));
-        line(kText, speed > 0.2F ? fmt::format("slip {:+.0f} deg   grip {:.1f} m/s2", data.slipDegrees, data.gripLimit) :
-                                   fmt::format("slip -   grip {:.1f} m/s2", data.gripLimit));
-        const char* hold = !data.grounded ? "airborne" : data.skidding ? "skidding" : "holding";
-        line(data.skidding ? kSkid : kGrip, data.parked ? fmt::format("{}   stopped", hold) : hold);
-        line(kFaint, "white: skis  blue: fall line  arrow: travel");
+        Compass(list, Add(origin, { 95.0F, 95.0F }), data);
+        EdgeGauge(list, Add(origin, { 240.0F, 55.0F }), data);
+        Text(list, Add(origin, { 205.0F, 85.0F }), kText, fmt::format("edge {:+.0f}", data.edgeDegrees));
+        PivotBar(list, Add(origin, { 240.0F, 125.0F }), data);
+        Text(list, Add(origin, { 205.0F, 135.0F }), kText, fmt::format("pivot {:+.0f}", data.pivotDegrees));
     }
 }

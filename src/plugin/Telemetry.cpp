@@ -10,6 +10,7 @@
 #include "plugin/SkiingState.h"
 #include "plugin/Tdm.h"
 
+#include <deque>
 #include <numbers>
 
 namespace SkiingInSkyrim::Telemetry
@@ -158,6 +159,94 @@ namespace SkiingInSkyrim::Telemetry
 
         Core::Vec3 FromNi(const RE::NiPoint3& point) { return { point.x, point.y, point.z }; }
 
+        // Per-frame trace while the character shakes vertically: the game's position next to the Havok body's,
+        // the controller's state, and how many times the movement was applied, to see where the bounce comes
+        // from. Starts when the vertical velocity changes by more than kTraceTrigger (m/s) in a frame, includes
+        // the kTraceBefore frames before, and runs until kTraceLinger seconds after the last such frame.
+        constexpr float       kTraceTrigger = 3.0F;
+        constexpr float       kTraceLinger = 0.5F;
+        constexpr std::size_t kTraceBefore = 10;
+        constexpr int         kTraceMaxLines = 900;  // per skiing session
+
+        struct FrameTrace
+        {
+            std::deque<std::string> before;
+            float                   seconds{ 0.0F };
+            float                   untilSeconds{ -1.0F };
+            int                     lines{ 0 };
+            std::optional<float>    lastZ;
+            std::optional<float>    lastHavokZ;
+            std::optional<float>    lastVerticalSpeed;
+
+            void Reset() { *this = {}; }
+
+            void Update(RE::PlayerCharacter* player, RE::bhkCharacterController* controller, float delta,
+                const Skiing::Debug& ski)
+            {
+                seconds += delta;
+                const auto  at = player->GetPosition();
+                RE::hkVector4 havokPosition;
+                controller->GetPositionImpl(havokPosition, false);
+                const float havokZ = havokPosition.quad.m128_f32[2] / RE::bhkWorld::GetWorldScale();
+                RE::hkVector4 havokVelocity;
+                controller->GetLinearVelocityImpl(havokVelocity);
+                const auto velocity = ToVec3(havokVelocity);
+                const auto calls = Movement::TakeCalls();
+                const auto move = Movement::Last();
+
+                const float dz = lastZ ? (at.z - *lastZ) / kUnitsPerMetre : 0.0F;
+                const float havokDz = lastHavokZ ? (havokZ - *lastHavokZ) / kUnitsPerMetre : 0.0F;
+                const float verticalSpeed = delta > 0.0F ? dz / delta : 0.0F;
+                const float jolt = lastVerticalSpeed ? std::fabs(verticalSpeed - *lastVerticalSpeed) : 0.0F;
+                const bool  first = !lastZ;
+                lastZ = at.z;
+                lastHavokZ = havokZ;
+                lastVerticalSpeed = verticalSpeed;
+                if (first) {
+                    return;
+                }
+
+                const auto& n = ski.ground.normal;
+                const float slopeVz = n.z > 0.1F ? -(n.x * velocity.x + n.y * velocity.y) / n.z : 0.0F;
+                auto line = fmt::format(
+                    "trace t={:.3f} dt={:.4f} dz={:+.3f}m havok-dz={:+.3f}m z-havok={:+.1f} vz-frame={:+.2f} jolt={:.2f} "
+                    "| havok-vel=({:+.2f},{:+.2f},{:+.2f}) slope-vz={:+.2f} ski-speed={:.2f} | state={} support={} "
+                    "flags={:#x} normal-z={:.3f} support-z={:.3f} | moves={} move-dt={:.4f} move=({:+.2f},{:+.2f},{:+.2f}) hug={} "
+                    "lowered={:.1f}",
+                    seconds, delta, dz, havokDz, at.z - havokZ, verticalSpeed, jolt, velocity.x, velocity.y, velocity.z,
+                    slopeVz, Core::Length(ski.ski.velocity), StateName(static_cast<std::uint32_t>(controller->context.currentState)),
+                    SupportName(controller->surfaceInfo.supportedState.get()), controller->flags.underlying(),
+                    controller->surfaceInfo.surfaceNormal.quad.m128_f32[2], controller->supportNorm.quad.m128_f32[2],
+                    calls.count, calls.delta, move.movement.x, move.movement.y, move.movement.z, ski.hugging,
+                    ski.heightCorrection);
+
+                if (jolt > kTraceTrigger) {
+                    if (untilSeconds < seconds && lines < kTraceMaxLines) {
+                        spdlog::info("trace: shaking, {} frames before it follow", before.size());
+                        for (const auto& earlier : before) {
+                            spdlog::info("{}", earlier);
+                            ++lines;
+                        }
+                    }
+                    before.clear();
+                    untilSeconds = seconds + kTraceLinger;
+                }
+                if (seconds <= untilSeconds) {
+                    if (lines < kTraceMaxLines) {
+                        spdlog::info("{}", line);
+                        if (++lines == kTraceMaxLines) {
+                            spdlog::info("trace: line limit reached for this session");
+                        }
+                    }
+                    return;
+                }
+                before.push_back(std::move(line));
+                if (before.size() > kTraceBefore) {
+                    before.pop_front();
+                }
+            }
+        };
+
         struct Sampler
         {
             AirLog        air;
@@ -165,6 +254,7 @@ namespace SkiingInSkyrim::Telemetry
             Shake         bodyVertical{ .verticalOnly = true };
             Shake         model;
             Shake         cameraShake;
+            FrameTrace    trace;
             std::uint32_t lastState{ ~0U };
             int           stateFlips{ 0 };
             float         maxDelta{ 0.0F };
@@ -207,11 +297,13 @@ namespace SkiingInSkyrim::Telemetry
                         controller->context.currentState == RE::hkpCharacterStateTypes::kJumping, { at.x, at.y, at.z },
                         ToVec3(frameVelocity), ski, delta);
                     TrackShake(player, controller, delta);
+                    trace.Update(player, controller, delta, ski);
                 } else {
                     air = {};
                     for (auto* shake : { &body, &bodyVertical, &model, &cameraShake }) {
                         shake->Lose();
                     }
+                    trace.Reset();
                 }
                 const auto& estimate = ski.ground;
                 const bool transition = ski.active && estimate.contact != lastContact;
