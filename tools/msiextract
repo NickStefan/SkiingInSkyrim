@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Stand-in for msitools' `msiextract -C <dest> <file.msi>` using Wine's msiexec.
+
+vsdownload.py needs msiextract to unpack the Windows SDK; SteamOS doesn't ship it.
+"""
+import re
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wine_env  # noqa: E402
+
+args = sys.argv[1:]
+if len(args) != 3 or args[0] != '-C':
+    raise SystemExit('usage: msiextract -C <dest> <file.msi>')
+dest, msi = Path(args[1]).resolve(), Path(args[2]).resolve()
+# Only x64 targets are built; Wine's msiexec fails on some ARM tool installers.
+if re.search(r'\barm(64)?\b', msi.name, re.IGNORECASE):
+    print(f'skipping ARM-only installer {msi.name}', file=sys.stderr)
+    sys.exit(0)
+# msiexec /a fails on a TARGETDIR that already holds files, so extract fresh and merge.
+# msiexec misparses TARGETDIR=... when the value contains spaces.
+staging = dest / ('.msi-' + re.sub(r'[^A-Za-z0-9_.-]', '_', msi.stem))
+shutil.rmtree(staging, ignore_errors=True)
+staging.mkdir(parents=True)
+wine_env.ensure_prefix()
+result = wine_env.run('msiexec', ['/a', wine_env.win(msi), '/qn', 'TARGETDIR=' + wine_env.win(staging)],
+                      timeout=1800)
+if result.returncode != 0:
+    sys.exit(result.returncode)
+(staging / msi.name).unlink(missing_ok=True)
+shutil.copytree(staging, dest, dirs_exist_ok=True)
+shutil.rmtree(staging)

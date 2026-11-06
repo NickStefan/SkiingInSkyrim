@@ -1,0 +1,52 @@
+# Build output
+/build/
+/out/
+/install/
+/dist-staging/
+/release/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# Local toolchain, SDKs, prebuilt CommonLibSSE-NG and other fetched dependencies
+/deps/
+/toolchain/
+/.venv/
+/vcpkg_installed/
+/.wine*/
+/wineprefix*/
+
+# MSVC / Windows build artifacts
+*.dll
+*.lib
+*.exp
+*.obj
+*.o
+*.pdb
+*.ilk
+*.idb
+*.ipch
+*.pch
+*.map
+*.res
+*.exe
+
+# Packaged mod archives
+*.7z
+*.zip
+
+# Editors and tooling
+.vs/
+.vscode/
+.idea/
+.cache/
+.clangd/
+*.swp
+*~
+.DS_Store
+__pycache__/
+
+# Local notes and game logs copied in for analysis
+/logs/
+*.log
