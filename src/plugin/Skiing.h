@@ -20,6 +20,7 @@ namespace SkiingInSkyrim::Skiing
         Core::SkiState       ski;
         Core::SkiStep        step;
         float                observedSpeed{ 0.0F };
+        bool                 hugging{ false };  // holding the skier to the slope over a crest this frame
     };
 
     // Main thread.

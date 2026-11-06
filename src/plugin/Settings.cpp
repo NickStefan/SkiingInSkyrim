@@ -54,13 +54,26 @@ namespace SkiingInSkyrim::Settings
                                          "settle across the hill and releasing side-slips before turning downhill.",
                 &S::parkSpeed, 0.0F, 2.0F, "%.2f" },
             { "SideslipSeconds", "Side-slip time", "Seconds you side-slip after releasing from a stop, once no edge is "
-                                                   "held, before the skis turn downhill.",
-                &S::sideslipSeconds, 0.0F, 3.0F, "%.2f" },
+                                                   "held, before the skis turn downhill. While side-slipping the "
+                                                   "trigger feathers the slip: none slides, full holds.",
+                &S::sideslipSeconds, 0.0F, 5.0F, "%.2f" },
             { "SideslipTurnSeconds", "Side-slip turn time", "Seconds for the skis to turn from across the hill to "
                                                             "pointing downhill.",
                 &S::sideslipTurnSeconds, 0.1F, 3.0F, "%.2f" },
+            { "SideslipSwitchSeconds", "Side-slip switch time", "Seconds for the other trigger to swing the skis "
+                                                                "through the fall line to face across the other way.",
+                &S::sideslipSwitchSeconds, 0.1F, 2.0F, "%.2f" },
+            { "GroundHugSeconds", "Ground hug time", "Seconds off the ground over a crest (not a jump) during which "
+                                                     "you're held to the slope; longer absorbs bigger crests, 0 is off.",
+                &S::groundHugSeconds, 0.0F, 1.0F, "%.2f" },
+            { "GroundHugGravity", "Ground hug pull", "m/s^2 of extra downward pull while held to the slope.",
+                &S::groundHugGravity, 0.0F, 60.0F, "%.0f" },
+            { "GroundHugMaxDropSpeed", "Ground hug max drop", "m/s. The pull can't take you down faster than this "
+                                                              "beyond following the slope, so you don't slam back onto it.",
+                &S::groundHugMaxDropSpeed, 0.0F, 10.0F, "%.1f" },
             { "StepTurnDegreesPerSecond", "Step turn rate", "Degrees per second the left stick or A/D turn you while "
-                                                            "nearly stopped.",
+                                                            "nearly stopped (side-slipping on a slope, a firm push "
+                                                            "instead turns you downhill that way).",
                 &S::stepTurnDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
             { "BlockedRatio", "Blocked ratio", "If the engine delivers less than this fraction of our speed, give way.",
                 &S::blockedRatio, 0.3F, 0.95F, "%.2f" },

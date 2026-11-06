@@ -57,8 +57,61 @@ namespace SkiingInSkyrim::Telemetry
             }
         }
 
+        constexpr float kUnitsPerMetre = 70.0F;
+
+        // One line per spell off the ground (engine support lost until regained) while skiing, to see how big
+        // each hop over a crest really is.
+        struct AirLog
+        {
+            bool       inAir{ false };
+            float      seconds{ 0.0F };
+            Core::Vec3 start{};
+            Core::Vec3 plane{ 0.0F, 0.0F, 1.0F };  // the slope taken off from
+            float      takeoffSpeed{ 0.0F };
+            float      takeoffVertical{ 0.0F };
+            float      takeoffSlope{ 0.0F };
+            float      peak{ 0.0F };  // metres above the slope taken off from
+            float      lastVertical{ 0.0F };
+            int        frames{ 0 };
+            int        hugFrames{ 0 };
+            bool       jumped{ false };
+
+            void Update(bool supported, bool jumping, const Core::Vec3& position, const Core::Vec3& velocity,
+                const Skiing::Debug& ski, float delta)
+            {
+                if (!inAir) {
+                    if (supported) {
+                        return;
+                    }
+                    *this = {};
+                    inAir = true;
+                    start = position;
+                    plane = ski.ground.hasNormal ? ski.ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F };
+                    takeoffSpeed = Core::HorizontalLength(velocity);
+                    takeoffVertical = velocity.z;
+                    takeoffSlope = std::acos(std::clamp(plane.z, -1.0F, 1.0F)) * kDegrees;
+                }
+                if (!supported) {
+                    seconds += delta;
+                    ++frames;
+                    hugFrames += ski.hugging ? 1 : 0;
+                    jumped = jumped || jumping;
+                    lastVertical = velocity.z;
+                    const Core::Vec3 offset{ position.x - start.x, position.y - start.y, position.z - start.z };
+                    peak = std::max(peak, (offset.x * plane.x + offset.y * plane.y + offset.z * plane.z) / kUnitsPerMetre);
+                    return;
+                }
+                inAir = false;
+                spdlog::info("air {:.2f}s{}: takeoff speed={:.1f}m/s vz={:+.1f} slope={:.0f} | peak above that slope={:.2f}m "
+                             "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames",
+                    seconds, jumped ? " (jump)" : "", takeoffSpeed, takeoffVertical, takeoffSlope, peak, lastVertical,
+                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees, hugFrames, frames);
+            }
+        };
+
         struct Sampler
         {
+            AirLog        air;
             float         sinceSample{ kSampleInterval };
             bool          wasEnabled{ false };
             Core::Contact lastContact{ Core::Contact::Grounded };
@@ -90,6 +143,16 @@ namespace SkiingInSkyrim::Telemetry
                 lastSupport = static_cast<std::uint32_t>(support);
 
                 const auto& ski = Skiing::GetDebug();
+                if (ski.active) {
+                    RE::hkVector4 frameVelocity;
+                    controller->GetLinearVelocityImpl(frameVelocity);
+                    const auto at = player->GetPosition();
+                    air.Update(support == RE::hkpSurfaceInfo::SupportedState::kSupported,
+                        controller->context.currentState == RE::hkpCharacterStateTypes::kJumping, { at.x, at.y, at.z },
+                        ToVec3(frameVelocity), ski, delta);
+                } else {
+                    air = {};
+                }
                 const auto& estimate = ski.ground;
                 const bool transition = ski.active && estimate.contact != lastContact;
                 lastContact = estimate.contact;
@@ -117,7 +180,7 @@ namespace SkiingInSkyrim::Telemetry
                     raw.right ? 'D' : '-', '\0' };
 
                 spdlog::info(
-                    "telemetry{} ski={} ground={} unsup={:.2f}s src={} wall={} smooth-slope={:.1f} smooth-fall-line={:+.0f} "
+                    "telemetry{} ski={} ground={} hug={} unsup={:.2f}s src={} wall={} smooth-slope={:.1f} smooth-fall-line={:+.0f} "
                     "| ski-vel=({:+.2f},{:+.2f}) ski-speed={:.2f} obs-speed={:.2f} blocked={} edge={:+.0f} pivot={:+.0f}{} "
                     "slip={:+.0f} grip={:.1f} skid={} triggers=({:.2f},{:.2f}) mouse={}{} "
                     "| cam={} cam-yaw={:.0f} look={:+.0f} "
@@ -126,6 +189,7 @@ namespace SkiingInSkyrim::Telemetry
                     "vel=({:+.2f},{:+.2f},{:+.2f})m/s ground-speed={:.2f}m/s move=({:+.2f},{:+.2f},{:+.2f}) yaw={:.0f} "
                     "keys={} keyAge={:.2f} stick=({:+.2f},{:+.2f}) stickAge={:.2f} tdm={} pos=({:.0f},{:.0f},{:.0f}) dt={:.4f}",
                     transition ? "*" : "", ski.active ? "active" : ski.inactiveReason, ContactName(estimate.contact),
+                    ski.hugging,
                     estimate.unsupportedSeconds, SourceName(estimate.source), estimate.wallContact, smoothed.angleDegrees,
                     smoothed.fallLineOffsetDegrees,
                     ski.ski.velocity.x, ski.ski.velocity.y, Core::Length(ski.ski.velocity), ski.observedSpeed,

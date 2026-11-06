@@ -147,10 +147,13 @@ namespace SkiingInSkyrim::Menu
                                         "They twist toward the edge you're holding, or into the hill with no edge, "
                                         "further the longer you hold. Keep holding and you stay put on the hill. "
                                         "Release before you've stopped and they untwist straight away. Stop "
-                                        "completely and the skis settle across the hill; release and you side-slip, "
-                                        "with any edge you hold setting how much (tap skid to stop again), then they "
-                                        "turn to point downhill. When nearly stopped, the left stick or A/D turn "
-                                        "you on the spot. W and S do nothing yet. Telemetry is written to the log "
+                                        "completely and the skis settle across the hill, facing the side of the "
+                                        "trigger you hold. Release and you side-slip, with that trigger setting how "
+                                        "much (tap skid to stop again); the other trigger swings the skis through the "
+                                        "fall line to face the other way. After a while with no edge, or when you "
+                                        "push the left stick, the skis turn downhill (angled the way you push). When "
+                                        "nearly stopped, the left stick or A/D turn you on the spot. W and S do "
+                                        "nothing yet. Telemetry is written to the log "
                                         "while enabled.");
 
             ImGuiMCP::SeparatorText("Compatibility");

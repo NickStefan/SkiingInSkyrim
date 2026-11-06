@@ -32,7 +32,7 @@ namespace SkiingInSkyrim::Core
         // Kinetic friction coefficient of waxed skis sliding along their length.
         float snowFriction{ 0.05F };
         // Air drag as deceleration per (m/s)^2; sets the top speed on a given slope.
-        float dragPerSpeedSquared{ 0.01F };
+        float dragPerSpeedSquared{ 0.02F };
         float maxSpeed{ 30.0F };
 
         // Sidecut radius in metres. A carving ski at edge angle t follows an arc of radius sidecut * cos(t).
@@ -62,9 +62,22 @@ namespace SkiingInSkyrim::Core
         // settle across the hill. After release the skid's grip goes and you side-slip on whatever edge you
         // hold; once no edge has been held for sideslipSeconds, the skis turn to point downhill over
         // sideslipTurnSeconds (for a full pivotMaxDegrees).
+        // While side-slipping, the edge's grip is measured against the slope: no edge slides on flat skis,
+        // full edge just holds you, and the trigger travel in between feathers the slip on any slope.
+        // You stop facing across the hill on the side of the held trigger (else the nearer side); the
+        // other trigger swings the skis through the fall line to the other side over sideslipSwitchSeconds.
+        // The stick ends the side-slip early, turning the tips downhill and up to 45 degrees that way.
         float parkSpeed{ 0.3F };
-        float sideslipSeconds{ 0.6F };
+        float sideslipSeconds{ 1.5F };
         float sideslipTurnSeconds{ 0.5F };
+        float sideslipSwitchSeconds{ 0.5F };
+
+        // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
+        // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra
+        // (m/s^2), so small crests are absorbed and only real drops give air. 0 seconds turns it off.
+        float groundHugSeconds{ 0.35F };
+        float groundHugGravity{ 35.0F };
+        float groundHugMaxDropSpeed{ 2.0F };  // m/s the pull may add beyond following the slope
         // Turning on the spot (left stick or A/D), only when nearly stopped.
         float stepTurnDegreesPerSecond{ 90.0F };
 
@@ -99,7 +112,11 @@ namespace SkiingInSkyrim::Core
         float lastEdgeSide{ 1.0F };   // pivot direction with flat skis on flat ground
         bool  parked{ false };        // stopped while skidding; kept until the skis have come round
         float parkHeading{ 0.0F };    // untwisted heading when parked, the way back on flat ground
+        float parkSide{ 1.0F };       // +1 parked facing right of the fall line (right edges uphill), -1 left
+        bool  switching{ false };     // swinging through the fall line to the other side
+        float exitOffset{ 0.0F };     // radians right of the fall line the skis turn to when the side-slip ends
         float sideslipTime{ 0.0F };   // seconds released while parked with no edge
+        float skidHold{ 0.0F };       // 0..1, how far into the skid stance (builds over pivotBuildSeconds)
         float commandedSpeed{ 0.0F };
     };
 
@@ -123,4 +140,10 @@ namespace SkiingInSkyrim::Core
     [[nodiscard]] float CarveRadius(float edgeRadians, const SkiSettings& settings) noexcept;
 
     SkiStep StepSki(SkiState& state, const SkiInput& input, const SkiSettings& settings = {}) noexcept;
+
+    // While briefly off the ground after skiing over a crest: the vertical velocity (m/s) to use instead
+    // of velocity.z, following the slope just left (lastNormal) rather than rising off it, plus the extra
+    // downward pull.
+    [[nodiscard]] float GroundHugVerticalSpeed(Vec3 velocity, Vec3 lastNormal, float deltaSeconds,
+        const SkiSettings& settings = {}) noexcept;
 }

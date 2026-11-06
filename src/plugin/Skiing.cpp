@@ -79,6 +79,7 @@ namespace SkiingInSkyrim::Skiing
 
         // Whichever of triggers or mouse buttons last asked for edge decides how the edge releases.
         bool g_edgeFromButtons = true;
+        bool g_skidFromToggle = false;
 
         // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Step turn: left stick X or A/D.
         void ReadControls(Core::SkiInput& ski)
@@ -97,7 +98,12 @@ namespace SkiingInSkyrim::Skiing
             ski.edgeTarget = edge;
             ski.edgeFromButtons = g_edgeFromButtons;
 
-            ski.skidHeld = input.skid;
+            // Skid held as skiing starts is usually part of the toggle chord (it can share a button), so it
+            // only counts once released and pressed again.
+            if (!input.skid) {
+                g_skidFromToggle = false;
+            }
+            ski.skidHeld = input.skid && !g_skidFromToggle;
 
             const bool stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
             if (stickFresh && std::fabs(input.stickX) > kStickDeadzone) {
@@ -116,6 +122,28 @@ namespace SkiingInSkyrim::Skiing
             }
             const float speed = grounded ? Core::Length(velocity) : horizontal;
             return { velocity.x / horizontal * speed, velocity.y / horizontal * speed };
+        }
+
+        // Set when the player jumps; cleared once back on the ground.
+        bool g_jumped = false;
+
+        // Briefly unsupported after skiing over a crest (not a jump): keep the skier on the slope.
+        bool HugGround(RE::bhkCharacterController* controller, const Core::Vec3& velocity,
+            const Core::GroundEstimate& ground, const Core::SkiSettings& physics, float delta)
+        {
+            const bool supported =
+                controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported;
+            if (controller->context.currentState == RE::hkpCharacterStateTypes::kJumping) {
+                g_jumped = true;
+            } else if (supported) {
+                g_jumped = false;
+            }
+            if (supported || g_jumped || !ground.hasNormal || ground.unsupportedSeconds >= physics.groundHugSeconds) {
+                return false;
+            }
+            const float vertical = Core::GroundHugVerticalSpeed(velocity, ground.normal, delta, physics);
+            controller->SetLinearVelocityImpl(RE::hkVector4(velocity.x, velocity.y, vertical, 0.0F));
+            return true;
         }
 
         void SetYaw(RE::PlayerCharacter* player, float yaw)
@@ -148,6 +176,7 @@ namespace SkiingInSkyrim::Skiing
         const bool starting = !g_debug.active;
         if (starting) {
             g_ground.Reset();
+            g_skidFromToggle = true;
         }
         const auto& ground = g_ground.Update({
             .supported = controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported,
@@ -182,6 +211,7 @@ namespace SkiingInSkyrim::Skiing
         SetYaw(player, step.yaw);
         Camera::Apply(player, delta, step.yaw, step.velocity, step.nextHeading);
         SetCommand({ true, step.velocity });
+        g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);
         SetOverlay({
             .active = true,
             .inactiveReason = "",
