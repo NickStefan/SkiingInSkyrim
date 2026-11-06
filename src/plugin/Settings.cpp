@@ -11,6 +11,9 @@ namespace SkiingInSkyrim::Settings
     {
         constexpr auto kPath = "Data/SKSE/Plugins/SkiingInSkyrim.ini";
 
+        constexpr std::uint32_t kLeftShift = 0x2A;
+        constexpr std::uint32_t kGamepadX = 0x4000;
+
         using S = Core::SkiSettings;
         constexpr FloatField kPhysicsFields[] = {
             { "Gravity", "Gravity", "m/s^2. Scales how hard slopes pull you.", &S::gravity, 2.0F, 20.0F, "%.2f" },
@@ -22,15 +25,15 @@ namespace SkiingInSkyrim::Settings
             { "SidecutRadius", "Sidecut radius", "Metres. A carving ski follows an arc of sidecut * cos(edge angle); "
                                                  "smaller carves tighter.",
                 &S::sidecutRadius, 5.0F, 40.0F, "%.1f" },
-            { "MaxEdgeDegrees", "Max edge angle", "Degrees of edge at full stick or a fully held key.", &S::maxEdgeDegrees,
-                10.0F, 70.0F, "%.0f" },
+            { "MaxEdgeDegrees", "Max edge angle", "Degrees of edge at a full trigger or a fully held mouse button.",
+                &S::maxEdgeDegrees, 10.0F, 70.0F, "%.0f" },
             { "EdgeEngageDegrees", "Edge engage angle", "Degrees. Below this the ski is only partly engaged and "
                                                         "carves a wider arc.",
                 &S::edgeEngageDegrees, 0.0F, 30.0F, "%.0f" },
             { "FlatGrip", "Flat grip", "Sideways friction of flat skis: how fast a smear or side-slip slows you.",
                 &S::flatGrip, 0.0F, 0.5F, "%.3f" },
             { "EdgeGripFactor", "Edge grip", "Sideways grip added by edging, times tan(edge angle). Limits how tight you can "
-                                       "carve at speed and how hard a hockey stop brakes.",
+                                             "carve at speed and how hard a hockey stop brakes.",
                 &S::edgeGrip, 0.1F, 2.0F, "%.2f" },
             { "TriggerEdgeRamp", "Trigger edge ramp", "Full edge range per second when edging with the triggers; "
                                                       "smooths the trigger.",
@@ -40,13 +43,25 @@ namespace SkiingInSkyrim::Settings
             { "MouseEdgeRelease", "Mouse edge release", "Full edge range per second after a mouse button is released; "
                                                         "slow keeps the edge from a tap.",
                 &S::buttonEdgeRelease, 0.1F, 10.0F, "%.2f" },
-            { "PivotDegreesPerSecond", "Pivot rate", "Degrees per second the skis twist at full stick (or A/D) on flat "
-                                                     "skis.",
-                &S::pivotDegreesPerSecond, 20.0F, 400.0F, "%.0f" },
-            { "PivotEdgedFactor", "Pivot on edge", "Fraction of the pivot rate left at full edge.", &S::pivotEdgedFactor,
-                0.0F, 1.0F, "%.2f" },
-            { "PivotRamp", "Pivot ramp", "Full pivot range per second; how quickly pivot input eases in and out.",
-                &S::pivotRamp, 1.0F, 30.0F, "%.1f" },
+            { "PivotMaxDegrees", "Skid twist", "Degrees the skis twist (pivot) when the skid button is held fully.",
+                &S::pivotMaxDegrees, 20.0F, 120.0F, "%.0f" },
+            { "PivotBuildSeconds", "Skid twist time", "Seconds of holding skid to reach the full twist; a shorter hold "
+                                                       "gives part of it.",
+                &S::pivotBuildSeconds, 0.05F, 2.0F, "%.2f" },
+            { "PivotReturnSeconds", "Skid return time", "Seconds for the skis to untwist after releasing skid.",
+                &S::pivotReturnSeconds, 0.05F, 2.0F, "%.2f" },
+            { "ParkSpeed", "Stop speed", "m/s. Slowing below this while holding skid counts as stopped: the skis "
+                                         "settle across the hill and releasing side-slips before turning downhill.",
+                &S::parkSpeed, 0.0F, 2.0F, "%.2f" },
+            { "SideslipSeconds", "Side-slip time", "Seconds you side-slip after releasing from a stop, once no edge is "
+                                                   "held, before the skis turn downhill.",
+                &S::sideslipSeconds, 0.0F, 3.0F, "%.2f" },
+            { "SideslipTurnSeconds", "Side-slip turn time", "Seconds for the skis to turn from across the hill to "
+                                                            "pointing downhill.",
+                &S::sideslipTurnSeconds, 0.1F, 3.0F, "%.2f" },
+            { "StepTurnDegreesPerSecond", "Step turn rate", "Degrees per second the left stick or A/D turn you while "
+                                                            "nearly stopped.",
+                &S::stepTurnDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
             { "BlockedRatio", "Blocked ratio", "If the engine delivers less than this fraction of our speed, give way.",
                 &S::blockedRatio, 0.3F, 0.95F, "%.2f" },
             { "BlockedBlend", "Blocked blend", "Per-frame blend toward the delivered speed while blocked.", &S::blockedBlend,
@@ -55,62 +70,149 @@ namespace SkiingInSkyrim::Settings
                 3.0F, "%.2f" },
         };
 
-        constexpr BoolField kPhysicsSwitches[] = {
-            { "LimitPivot", "Limit pivot to 90 degrees from travel",
-                "While moving, pivot can't turn the skis further than across your direction of travel.",
-                &S::limitPivot },
+        using C = Core::CameraFollowSettings;
+        constexpr CameraField kCameraFields[] = {
+            { "FollowSeconds", "Camera follow lag", "Seconds. How lazily the camera swings round to your direction of "
+                                                    "travel once it's outside the lazy zone.",
+                &C::followSeconds, 0.05F, 2.0F, "%.2f" },
+            { "TravelSmoothingSeconds", "Travel smoothing", "Seconds the direction of travel is averaged over first, so "
+                                                            "quick back-and-forth carves cancel out.",
+                &C::travelSmoothingSeconds, 0.0F, 2.0F, "%.2f" },
+            { "LazyZoneDegrees", "Lazy zone", "Degrees. Within this of the camera, the direction of travel only pulls "
+                                              "it round slowly.",
+                &C::lazyZoneDegrees, 0.0F, 45.0F, "%.0f" },
+            { "RecenterSeconds", "Lazy zone recenter", "Seconds. How slowly the camera recenters within the lazy zone.",
+                &C::recenterSeconds, 0.2F, 6.0F, "%.2f" },
+            { "LookHoldSeconds", "Look-around hold", "Seconds the camera stays where you looked before easing back.",
+                &C::lookHoldSeconds, 0.0F, 5.0F, "%.2f" },
+            { "LookReturnSeconds", "Look-around return", "Seconds. How lazily the camera eases back after looking around.",
+                &C::lookReturnSeconds, 0.05F, 3.0F, "%.2f" },
         };
+
+        struct BindingInfo
+        {
+            Binding     binding;
+            const char* key;  // INI key prefix
+            const char* help;
+            Hotkey      defaults;
+        };
+
+        const BindingInfo kBindings[] = {
+            { Binding::Toggle, "ToggleKey", "Toggle skiing mode", {} },
+            { Binding::SkidKeyboard, "SkidKey", "Skid (keyboard/mouse)", { { RE::INPUT_DEVICE::kKeyboard, kLeftShift }, {} } },
+            { Binding::SkidGamepad, "SkidButton", "Skid (gamepad)", { { RE::INPUT_DEVICE::kGamepad, kGamepadX }, {} } },
+        };
+        constexpr std::size_t kBindingCount = std::size(kBindings);
+
+        bool Accepts(Binding binding, RE::INPUT_DEVICE device)
+        {
+            switch (binding) {
+            case Binding::SkidKeyboard:
+                return device == RE::INPUT_DEVICE::kKeyboard || device == RE::INPUT_DEVICE::kMouse;
+            case Binding::SkidGamepad:
+                return device == RE::INPUT_DEVICE::kGamepad;
+            default:
+                return device >= RE::INPUT_DEVICE::kKeyboard && device <= RE::INPUT_DEVICE::kGamepad;
+            }
+        }
 
         struct State
         {
-            Core::SkiSettings physics;
-            Hotkey            toggleKey;
-            std::string       toggleKeyName;
-            bool              showOverlay{ false };
+            Core::SkiSettings                       physics;
+            Core::CameraFollowSettings              camera;
+            std::array<Hotkey, kBindingCount>       bindings;
+            std::array<std::string, kBindingCount>  bindingNames;
+            bool                                    showOverlay{ false };
         };
 
         std::mutex g_lock;
         State      g_state;
 
-        std::string KeyName(Hotkey key)
+        std::string ButtonName(Button button)
         {
-            if (!key.Bound()) {
-                return {};
-            }
             RE::BSFixedString name;
             auto* manager = RE::BSInputDeviceManager::GetSingleton();
-            if (manager && manager->GetButtonNameFromID(key.device, static_cast<std::int32_t>(key.id), name) && !name.empty()) {
+            if (manager && manager->GetButtonNameFromID(button.device, static_cast<std::int32_t>(button.id), name) &&
+                !name.empty()) {
                 return name.c_str();
             }
-            return fmt::format("device {} button {}", static_cast<int>(key.device), key.id);
+            return fmt::format("device {} button {}", static_cast<int>(button.device), button.id);
+        }
+
+        std::string HotkeyName(const Hotkey& hotkey)
+        {
+            if (!hotkey.Bound()) {
+                return {};
+            }
+            return hotkey.modifier.Bound() ? ButtonName(hotkey.modifier) + " + " + ButtonName(hotkey.key) :
+                                             ButtonName(hotkey.key);
+        }
+
+        std::optional<Button> ReadButton(const Core::Ini& ini, Binding binding, const std::string& key)
+        {
+            const auto device = ini.GetInt("Controls", key + "Device");
+            const auto id = ini.GetInt("Controls", key);
+            if (!device) {
+                return std::nullopt;
+            }
+            if (*device < 0) {
+                return Button{};
+            }
+            if (!id || *id < 0 || !Accepts(binding, static_cast<RE::INPUT_DEVICE>(*device))) {
+                return std::nullopt;
+            }
+            return Button{ static_cast<RE::INPUT_DEVICE>(*device), static_cast<std::uint32_t>(*id) };
+        }
+
+        void WriteButton(std::string& text, const std::string& key, Button button)
+        {
+            text += fmt::format("{}Device = {}\n{} = {}\n", key, button.Bound() ? static_cast<int>(button.device) : -1,
+                key, button.id);
         }
     }
 
-    std::span<const FloatField> PhysicsFields() noexcept { return kPhysicsFields; }
-    std::span<const BoolField>  PhysicsSwitches() noexcept { return kPhysicsSwitches; }
+    std::span<const FloatField>  PhysicsFields() noexcept { return kPhysicsFields; }
+    std::span<const BoolField>   PhysicsSwitches() noexcept { return {}; }
+    std::span<const CameraField> CameraFields() noexcept { return kCameraFields; }
 
     void Load()
     {
         State loaded;
+        for (std::size_t i = 0; i < kBindingCount; ++i) {
+            loaded.bindings[i] = kBindings[i].defaults;
+        }
+
         std::ifstream file(kPath, std::ios::binary);
         if (file) {
             std::stringstream text;
             text << file.rdbuf();
             const auto ini = Core::Ini::Parse(text.str());
 
-            const auto device = ini.GetInt("Controls", "ToggleKeyDevice");
-            const auto id = ini.GetInt("Controls", "ToggleKey");
-            if (device && id && *device >= RE::INPUT_DEVICE::kKeyboard && *device <= RE::INPUT_DEVICE::kGamepad && *id >= 0) {
-                loaded.toggleKey = { static_cast<RE::INPUT_DEVICE>(*device), static_cast<std::uint32_t>(*id) };
+            for (std::size_t i = 0; i < kBindingCount; ++i) {
+                const auto& info = kBindings[i];
+                if (const auto key = ReadButton(ini, info.binding, info.key)) {
+                    loaded.bindings[i] = { *key, {} };
+                    if (const auto modifier = ReadButton(ini, info.binding, std::string(info.key) + "Modifier")) {
+                        loaded.bindings[i].modifier = *modifier;
+                    }
+                }
             }
             for (const auto& field : kPhysicsFields) {
                 if (const auto value = ini.GetFloat("Physics", field.key)) {
                     loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
                 }
             }
-            for (const auto& field : kPhysicsSwitches) {
+            for (const auto& field : PhysicsSwitches()) {
                 if (const auto value = ini.GetInt("Physics", field.key)) {
                     loaded.physics.*field.member = *value != 0;
+                }
+            }
+            if (const auto value = ini.GetInt("Camera", "FollowTravel")) {
+                loaded.camera.enabled = *value != 0;
+            }
+            for (const auto& field : kCameraFields) {
+                if (const auto value = ini.GetFloat("Camera", field.key)) {
+                    loaded.camera.*field.member = std::clamp(*value, field.min, field.max);
                 }
             }
             if (const auto value = ini.GetInt("Display", "ShowOverlay")) {
@@ -120,7 +222,9 @@ namespace SkiingInSkyrim::Settings
         } else {
             spdlog::info("no {}, using defaults", kPath);
         }
-        loaded.toggleKeyName = KeyName(loaded.toggleKey);
+        for (std::size_t i = 0; i < kBindingCount; ++i) {
+            loaded.bindingNames[i] = HotkeyName(loaded.bindings[i]);
+        }
 
         std::scoped_lock lock(g_lock);
         g_state = std::move(loaded);
@@ -136,17 +240,27 @@ namespace SkiingInSkyrim::Settings
         std::string text;
         text += "; Skiing in Skyrim settings. Written by the in-game menu; edit there or here.\n\n";
         text += "[Controls]\n";
-        text += "; Toggle key: device (0 keyboard, 1 mouse, 2 gamepad, -1 unbound) and button id.\n";
-        text += fmt::format("ToggleKeyDevice = {}\n", static_cast<int>(state.toggleKey.device));
-        text += fmt::format("ToggleKey = {}\n\n", state.toggleKey.id);
-        text += "[Display]\n";
+        text += "; Buttons: device (0 keyboard, 1 mouse, 2 gamepad, -1 unbound) and button id. A modifier, if bound,\n";
+        text += "; must be held when the button is pressed.\n";
+        for (std::size_t i = 0; i < kBindingCount; ++i) {
+            text += fmt::format("; {}\n", kBindings[i].help);
+            WriteButton(text, kBindings[i].key, state.bindings[i].key);
+            WriteButton(text, std::string(kBindings[i].key) + "Modifier", state.bindings[i].modifier);
+        }
+        text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
-        text += "[Physics]\n";
+        text += "[Camera]\n";
+        text += "; Third-person camera follows your direction of travel while skiing (1 on, 0 off).\n";
+        text += fmt::format("FollowTravel = {}\n", state.camera.enabled ? 1 : 0);
+        for (const auto& field : kCameraFields) {
+            text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.camera.*field.member);
+        }
+        text += "\n[Physics]\n";
         for (const auto& field : kPhysicsFields) {
             text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.physics.*field.member);
         }
-        for (const auto& field : kPhysicsSwitches) {
+        for (const auto& field : PhysicsSwitches()) {
             text += fmt::format("; {} (1 on, 0 off)\n{} = {}\n", field.help, field.key, state.physics.*field.member ? 1 : 0);
         }
 
@@ -168,27 +282,40 @@ namespace SkiingInSkyrim::Settings
         g_state.physics = physics;
     }
 
-    Hotkey ToggleKey()
+    Core::CameraFollowSettings Camera()
     {
         std::scoped_lock lock(g_lock);
-        return g_state.toggleKey;
+        return g_state.camera;
     }
 
-    std::string ToggleKeyName()
+    void SetCamera(const Core::CameraFollowSettings& camera)
     {
         std::scoped_lock lock(g_lock);
-        return g_state.toggleKeyName;
+        g_state.camera = camera;
     }
 
-    void SetToggleKey(Hotkey key)
+    Hotkey GetBinding(Binding binding)
     {
-        auto name = KeyName(key);
-        {
-            std::scoped_lock lock(g_lock);
-            g_state.toggleKey = key;
-            g_state.toggleKeyName = std::move(name);
+        std::scoped_lock lock(g_lock);
+        return g_state.bindings[static_cast<std::size_t>(binding)];
+    }
+
+    std::string BindingName(Binding binding)
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.bindingNames[static_cast<std::size_t>(binding)];
+    }
+
+    void SetBinding(Binding binding, Hotkey hotkey)
+    {
+        if (!Accepts(binding, hotkey.key.device)) {
+            hotkey = {};
         }
-        spdlog::info("toggle key set to {}", key.Bound() ? fmt::format("device {} id {}", static_cast<int>(key.device), key.id) : "unbound");
+        auto name = HotkeyName(hotkey);
+        spdlog::info("{} set to {}", kBindings[static_cast<std::size_t>(binding)].help, name.empty() ? "unbound" : name);
+        std::scoped_lock lock(g_lock);
+        g_state.bindings[static_cast<std::size_t>(binding)] = hotkey;
+        g_state.bindingNames[static_cast<std::size_t>(binding)] = std::move(name);
     }
 
     bool ShowOverlay()

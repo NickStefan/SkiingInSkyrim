@@ -1,43 +1,69 @@
 #pragma once
 
+#include "core/CameraFollow.h"
 #include "core/SkiPhysics.h"
 
 namespace SkiingInSkyrim::Settings
 {
-    struct Hotkey
+    struct Button
     {
         RE::INPUT_DEVICE device{ RE::INPUT_DEVICE::kNone };
         std::uint32_t    id{ 0 };
 
         [[nodiscard]] bool Bound() const noexcept { return device != RE::INPUT_DEVICE::kNone; }
-        [[nodiscard]] bool Matches(const RE::ButtonEvent& button) const
+        [[nodiscard]] bool Is(RE::INPUT_DEVICE otherDevice, std::uint32_t otherId) const noexcept
         {
-            return Bound() && button.GetDevice() == device && button.GetIDCode() == id;
+            return Bound() && device == otherDevice && id == otherId;
         }
+        [[nodiscard]] bool operator==(const Button&) const = default;
     };
 
-    // One tunable physics parameter; drives both the INI file and the menu slider.
-    struct FloatField
+    // A button, optionally held together with a modifier (e.g. LB + X).
+    struct Hotkey
+    {
+        Button key;
+        Button modifier;
+
+        [[nodiscard]] bool Bound() const noexcept { return key.Bound(); }
+        [[nodiscard]] bool operator==(const Hotkey&) const = default;
+    };
+
+    enum class Binding
+    {
+        Toggle,
+        SkidKeyboard,  // keyboard or mouse
+        SkidGamepad,
+    };
+
+    // One tunable value; drives both the INI file and the menu slider.
+    template <class Owner>
+    struct FloatFieldOf
     {
         const char* key;
         const char* label;
         const char* help;
-        float Core::SkiSettings::*member;
+        float Owner::*member;
         float       min;
         float       max;
         const char* format;
     };
 
-    struct BoolField
+    template <class Owner>
+    struct BoolFieldOf
     {
         const char* key;
         const char* label;
         const char* help;
-        bool Core::SkiSettings::*member;
+        bool Owner::*member;
     };
 
-    [[nodiscard]] std::span<const FloatField> PhysicsFields() noexcept;
-    [[nodiscard]] std::span<const BoolField>  PhysicsSwitches() noexcept;
+    using FloatField = FloatFieldOf<Core::SkiSettings>;
+    using BoolField = BoolFieldOf<Core::SkiSettings>;
+    using CameraField = FloatFieldOf<Core::CameraFollowSettings>;
+
+    [[nodiscard]] std::span<const FloatField>  PhysicsFields() noexcept;
+    [[nodiscard]] std::span<const BoolField>   PhysicsSwitches() noexcept;
+    [[nodiscard]] std::span<const CameraField> CameraFields() noexcept;
 
     // Main thread, once game data and input devices exist.
     void Load();
@@ -48,10 +74,13 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] Core::SkiSettings Physics();
     void                            SetPhysics(const Core::SkiSettings& physics);
 
-    [[nodiscard]] Hotkey      ToggleKey();
-    [[nodiscard]] std::string ToggleKeyName();
-    // Looks up the key's display name through the game's input manager when bound.
-    void                      SetToggleKey(Hotkey key);
+    [[nodiscard]] Core::CameraFollowSettings Camera();
+    void                                     SetCamera(const Core::CameraFollowSettings& camera);
+
+    [[nodiscard]] Hotkey      GetBinding(Binding binding);
+    [[nodiscard]] std::string BindingName(Binding binding);  // "LB + X", or empty when unbound
+    // Looks up display names through the game's input manager.
+    void                      SetBinding(Binding binding, Hotkey hotkey);
 
     [[nodiscard]] bool ShowOverlay();
     void               SetShowOverlay(bool show);

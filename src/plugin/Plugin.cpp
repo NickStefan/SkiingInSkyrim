@@ -1,3 +1,4 @@
+#include "plugin/Camera.h"
 #include "plugin/Input.h"
 #include "plugin/Menu.h"
 #include "plugin/Settings.h"
@@ -19,6 +20,7 @@ namespace
         switch (message->type) {
         case SKSE::MessagingInterface::kPostLoad:
             SkiingInSkyrim::Tdm::Connect();
+            SkiingInSkyrim::Camera::Connect();
             break;
         case SKSE::MessagingInterface::kInputLoaded:
             if (SkiingInSkyrim::Input::Register()) {

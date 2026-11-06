@@ -95,12 +95,13 @@ namespace SkiingInSkyrim::Overlay
             Draw::AddLine(list, Add(center, Scale(end, -1.0F)), Add(center, end), data.skidding ? kSkid : kGrip, 5.0F);
         }
 
-        // Pivot input as a bar: centre is none, ends are full left/right.
-        void PivotBar(ImGuiMCP::ImDrawList* list, ImVec2 center, float pivot)
+        // Applied pivot as a bar: centre is none, ends are the full pivot left/right.
+        void PivotBar(ImGuiMCP::ImDrawList* list, ImVec2 center, const Skiing::OverlayData& data)
         {
             constexpr float kHalf = 45.0F;
             Draw::AddRect(list, Add(center, { -kHalf, -4.0F }), Add(center, { kHalf, 4.0F }), kFaint, 2.0F, 0, 1.0F);
-            const float x = std::clamp(pivot, -1.0F, 1.0F) * kHalf;
+            const float fraction = data.maxPivotDegrees > 0.0F ? data.pivotDegrees / data.maxPivotDegrees : 0.0F;
+            const float x = std::clamp(fraction, -1.0F, 1.0F) * kHalf;
             Draw::AddRectFilled(list, Add(center, { std::min(0.0F, x), -4.0F }), Add(center, { std::max(0.0F, x), 4.0F }),
                 kSki, 2.0F, 0);
         }
@@ -127,8 +128,8 @@ namespace SkiingInSkyrim::Overlay
         Compass(list, Add(origin, { 80.0F, 80.0F }), data);
         EdgeGauge(list, Add(origin, { 230.0F, 50.0F }), data);
         Text(list, Add(origin, { 185.0F, 80.0F }), kText, fmt::format("edge {:+.0f} deg", data.edgeDegrees));
-        PivotBar(list, Add(origin, { 230.0F, 120.0F }), data.pivot);
-        Text(list, Add(origin, { 185.0F, 130.0F }), kText, fmt::format("pivot {:+.2f}", data.pivot));
+        PivotBar(list, Add(origin, { 230.0F, 120.0F }), data);
+        Text(list, Add(origin, { 185.0F, 130.0F }), kText, fmt::format("pivot {:+.0f} deg", data.pivotDegrees));
 
         const float speed = Core::Length(data.velocity);
         float       y = kTop + 160.0F;
@@ -139,7 +140,8 @@ namespace SkiingInSkyrim::Overlay
         line(kText, fmt::format("speed {:.1f} m/s   slope {:.0f} deg", speed, data.slopeDegrees));
         line(kText, speed > 0.2F ? fmt::format("slip {:+.0f} deg   grip {:.1f} m/s2", data.slipDegrees, data.gripLimit) :
                                    fmt::format("slip -   grip {:.1f} m/s2", data.gripLimit));
-        line(data.skidding ? kSkid : kGrip, !data.grounded ? "airborne" : data.skidding ? "skidding" : "holding");
+        const char* hold = !data.grounded ? "airborne" : data.skidding ? "skidding" : "holding";
+        line(data.skidding ? kSkid : kGrip, data.parked ? fmt::format("{}   side-slip mode", hold) : hold);
         line(kFaint, "white: skis  blue: fall line  arrow: travel");
     }
 }

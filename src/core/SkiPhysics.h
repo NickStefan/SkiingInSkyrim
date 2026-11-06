@@ -2,6 +2,8 @@
 
 #include "core/Vec3.h"
 
+#include <optional>
+
 namespace SkiingInSkyrim::Core
 {
     struct Vec2
@@ -47,13 +49,24 @@ namespace SkiingInSkyrim::Core
         float buttonEdgeRamp{ 2.0F };
         float buttonEdgeRelease{ 0.6F };
 
-        // Pivot (twisting the skis under you), degrees per second at full input; a fully edged ski
-        // pivots at pivotEdgedFactor of that.
-        float pivotDegreesPerSecond{ 120.0F };
-        float pivotEdgedFactor{ 0.35F };
-        float pivotRamp{ 8.0F };
-        // Pivot can't turn the skis more than 90 degrees from the direction of travel while moving.
-        bool limitPivot{ true };
+        // Skid: holding the skid button pivots (twists) the skis toward the edged side, or into the hill
+        // with no edge, reaching pivotMaxDegrees after pivotBuildSeconds; releasing untwists them over
+        // pivotReturnSeconds. The twisted stance digs the edges in and brakes along the skis as well, so
+        // holding skid brings you to a stop and holds you there.
+        float pivotMaxDegrees{ 90.0F };
+        float pivotBuildSeconds{ 0.3F };
+        float pivotReturnSeconds{ 0.4F };
+        // While moving, skid never twists the skis more than 90 degrees from the direction of travel.
+        //
+        // Side-slip: coming to a stop (below parkSpeed, m/s) while holding skid parks you, and the skis
+        // settle across the hill. After release the skid's grip goes and you side-slip on whatever edge you
+        // hold; once no edge has been held for sideslipSeconds, the skis turn to point downhill over
+        // sideslipTurnSeconds (for a full pivotMaxDegrees).
+        float parkSpeed{ 0.3F };
+        float sideslipSeconds{ 0.6F };
+        float sideslipTurnSeconds{ 0.5F };
+        // Turning on the spot (left stick or A/D), only when nearly stopped.
+        float stepTurnDegreesPerSecond{ 90.0F };
 
         // If the engine delivers less than this fraction of what we asked for, something is in the way.
         float blockedRatio{ 0.75F };
@@ -71,7 +84,8 @@ namespace SkiingInSkyrim::Core
         float yaw{ 0.0F };                 // current ski heading, radians
         float edgeTarget{ 0.0F };          // -1 left edge .. +1 right edge, fraction of max edge
         bool  edgeFromButtons{ false };    // digital input: ramp in, release slowly
-        float pivotTarget{ 0.0F };         // -1 twist left .. +1 twist right
+        bool  skidHeld{ false };
+        float stepTurn{ 0.0F };            // -1 left .. +1 right, used only when nearly stopped
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention
     };
@@ -79,8 +93,13 @@ namespace SkiingInSkyrim::Core
     struct SkiState
     {
         Vec2  velocity{};
-        float edge{ 0.0F };   // -1 .. +1, fraction of max edge
-        float pivot{ 0.0F };  // -1 .. +1
+        float edge{ 0.0F };           // -1 .. +1, fraction of max edge
+        float pivotAngle{ 0.0F };     // radians of twist currently applied, >= 0
+        float pivotSide{ 1.0F };      // +1 right, -1 left
+        float lastEdgeSide{ 1.0F };   // pivot direction with flat skis on flat ground
+        bool  parked{ false };        // stopped while skidding; kept until the skis have come round
+        float parkHeading{ 0.0F };    // untwisted heading when parked, the way back on flat ground
+        float sideslipTime{ 0.0F };   // seconds released while parked with no edge
         float commandedSpeed{ 0.0F };
     };
 
@@ -90,9 +109,14 @@ namespace SkiingInSkyrim::Core
         float yaw{ 0.0F };
         bool  blocked{ false };
         float edgeDegrees{ 0.0F };     // signed, positive = right edge
+        float pivotDegrees{ 0.0F };    // signed twist currently applied, positive = right
         float slipDegrees{ 0.0F };     // signed angle from the ski to the velocity, positive = sliding right
         float gripLimit{ 0.0F };       // m/s^2 of sideways force the edge can give
         bool  skidding{ false };       // sideways motion exceeded the grip limit
+        bool  parked{ false };         // releasing skid now side-slips instead of untwisting straight away
+        // While skidding or parked: where the skis will point once the skid is over (radians). Positive
+        // pivotDegrees is the skis turned right of it.
+        std::optional<float> nextHeading;
     };
 
     // Arc radius of a carving ski at the given edge angle, or infinity when flat.

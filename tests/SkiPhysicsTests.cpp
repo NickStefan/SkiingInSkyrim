@@ -20,11 +20,14 @@ namespace
     }
 
     float Heading(Vec2 velocity) { return std::atan2(velocity.x, velocity.y); }
+    float AngleBetweenRadians(float a, float b) { return std::fabs(std::remainder(a - b, 2.0F * std::numbers::pi_v<float>)); }
+    Vec2  Scale2(Vec2 v, float s) { return { v.x * s, v.y * s }; }
 
     struct Controls
     {
         float edge{ 0.0F };
-        float pivot{ 0.0F };
+        bool  skid{ false };
+        float step{ 0.0F };
         bool  buttons{ false };
         bool  grounded{ true };
     };
@@ -53,7 +56,8 @@ namespace
             input.yaw = yaw;
             input.edgeTarget = controls.edge;
             input.edgeFromButtons = controls.buttons;
-            input.pivotTarget = controls.pivot;
+            input.skidHeld = controls.skid;
+            input.stepTurn = controls.step;
             last = StepSki(state, input, settings);
             yaw = last.yaw;
             return last;
@@ -204,26 +208,6 @@ TEST_CASE("hockey stop: skis across the direction of travel on hard edge brake i
     CHECK_NEAR(skier.Speed(), 0.0F, 1e-4F);
 }
 
-TEST_CASE("hockey stop from a pivot: twisting the skis and edging scrubs most of the speed")
-{
-    Skier stopping;
-    stopping.state.velocity = { 0.0F, 10.0F };
-    float maxCrosswise = 0.0F;
-    for (int i = 0; i < 96; ++i) {
-        stopping.Step(kFlat, i < 48 ? Controls{ .pivot = 1.0F } : Controls{ .edge = 1.0F });
-        maxCrosswise = std::max(maxCrosswise, std::fabs(stopping.state.velocity.x));
-    }
-
-    Skier gliding;
-    gliding.state.velocity = { 0.0F, 10.0F };
-    gliding.Run(1.6F, kFlat);
-
-    CHECK(stopping.yaw > 70.0F * kDegrees);
-    CHECK(stopping.Speed() < 3.0F);
-    CHECK(gliding.Speed() > 7.0F);
-    CHECK(maxCrosswise < 2.0F);  // the skier never swung round to travel where the skis point
-}
-
 TEST_CASE("flat skis across the direction of travel only smear")
 {
     Skier skier;
@@ -234,61 +218,239 @@ TEST_CASE("flat skis across the direction of travel only smear")
     CHECK(skier.last.skidding);
 }
 
-TEST_CASE("pivoting is harder on edge")
+TEST_CASE("hockey stop: holding pivot on a hard edge stops in one motion")
 {
-    Skier flat;
-    flat.Run(0.5F, kFlat, { .pivot = 1.0F });
+    Skier stopping;
+    stopping.state.velocity = { 0.0F, 10.0F };
+    float maxCrosswise = 0.0F;
+    for (int i = 0; i < 90; ++i) {
+        stopping.Step(kFlat, { .edge = 1.0F, .skid = true });
+        maxCrosswise = std::max(maxCrosswise, std::fabs(stopping.state.velocity.x));
+    }
 
-    Skier edged;
-    edged.Edged(1.0F).Run(0.5F, kFlat, { .edge = 1.0F, .pivot = 1.0F });
-
-    CHECK(flat.yaw > 0.5F);
-    CHECK_NEAR(edged.yaw / flat.yaw, edged.settings.pivotEdgedFactor, 0.02F);
+    CHECK_NEAR(stopping.last.pivotDegrees, 90.0F, 0.5F);
+    CHECK(stopping.Speed() < 1.0F);
+    CHECK(maxCrosswise < 2.5F);  // braked rather than swinging round to where the skis point
 }
 
-TEST_CASE("while moving, pivot stops at 90 degrees from the direction of travel")
+TEST_CASE("pivot twists toward the edge being held")
+{
+    Skier right;
+    right.state.velocity = { 0.0F, 10.0F };
+    right.Run(0.15F, kFlat, { .edge = 1.0F, .skid = true });
+
+    Skier left;
+    left.state.velocity = { 0.0F, 10.0F };
+    left.Run(0.15F, kFlat, { .edge = -1.0F, .skid = true });
+
+    CHECK(right.last.pivotDegrees > 30.0F);
+    CHECK(left.last.pivotDegrees < -30.0F);
+}
+
+TEST_CASE("with flat skis, pivot twists toward the last edge used")
 {
     Skier skier;
-    skier.state.velocity = { 0.0F, 10.0F };
-    skier.Run(2.0F, kFlat, { .pivot = 1.0F });
-    CHECK(skier.Speed() > 5.0F);
-    const float slip = std::atan2(skier.state.velocity.x, skier.state.velocity.y) - skier.yaw;
-    CHECK(std::fabs(std::remainder(slip, 2.0F * std::numbers::pi_v<float>)) <= kQuarterTurn + 1e-3F);
+    skier.Run(0.3F, kFlat, { .edge = -1.0F });
+    skier.Run(0.5F, kFlat);
+    skier.Run(0.1F, kFlat, { .skid = true });
+    CHECK(skier.last.pivotDegrees < 0.0F);
 }
 
-TEST_CASE("released pivot leaves the skis where they are")
+TEST_CASE("a short hold gives a partial pivot")
 {
     Skier skier;
-    skier.state.velocity = { 0.0F, 10.0F };
-    skier.Run(0.3F, kFlat, { .pivot = 1.0F });
-    skier.Run(0.2F, kFlat);
-    const float held = skier.yaw;
-    skier.Run(0.3F, kFlat);
-    CHECK(held > 0.3F);
-    CHECK_NEAR(skier.yaw, held, 1e-5F);
+    skier.Run(0.1F, kFlat, { .skid = true });
+    const float expected = skier.settings.pivotMaxDegrees * 0.1F / skier.settings.pivotBuildSeconds;
+    CHECK_NEAR(skier.last.pivotDegrees, expected, 1.0F);
 }
 
-TEST_CASE("without the limit, or when nearly stopped, pivot turns freely")
+TEST_CASE("releasing a skid that only slowed you untwists at the normal rate")
 {
-    Skier unlimited;
-    unlimited.settings.limitPivot = false;
-    unlimited.state.velocity = { 0.0F, 10.0F };
-    unlimited.Run(2.0F, kFlat, { .pivot = 1.0F });
-    CHECK(unlimited.yaw > std::numbers::pi_v<float>);
+    Skier skier;
+    skier.yaw = 0.2F;
+    skier.state.velocity = { std::sin(0.2F) * 8.0F, std::cos(0.2F) * 8.0F };
+    skier.Run(0.15F, kFlat, { .skid = true });
+    CHECK(skier.yaw > 0.5F);
+    CHECK(!skier.last.parked);
+    skier.Run(skier.settings.pivotReturnSeconds + 0.05F, kFlat);
+    CHECK_NEAR(skier.yaw, 0.2F, 1e-4F);
+    CHECK_NEAR(skier.last.pivotDegrees, 0.0F, 1e-4F);
+}
 
-    Skier slow;
-    slow.state.velocity = { 0.0F, 0.5F };
-    slow.Run(2.0F, kFlat, { .pivot = 1.0F });
-    CHECK(slow.yaw > std::numbers::pi_v<float>);
+namespace
+{
+    // Skis down a slope at speed and holds skid until stopped and parked.
+    Skier ParkedOn(Vec3 slope)
+    {
+        Skier skier;
+        skier.state.velocity = { 0.0F, 8.0F };
+        skier.Run(3.0F, slope, { .skid = true });
+        return skier;
+    }
+}
+
+TEST_CASE("stopping with skid parks you")
+{
+    const auto skier = ParkedOn(SlopeDownY(20.0F));
+    CHECK(skier.Speed() < 0.05F);
+    CHECK(skier.last.parked);
+}
+
+TEST_CASE("releasing skid after a stop side-slips before the skis come round downhill")
+{
+    auto skier = ParkedOn(SlopeDownY(20.0F));
+    skier.Run(0.3F, SlopeDownY(20.0F));
+    CHECK(std::fabs(skier.last.pivotDegrees) > 50.0F);  // a normal release would be nearly untwisted
+    CHECK(skier.state.velocity.y > 0.5F);               // sliding downhill
+    CHECK(std::fabs(skier.last.slipDegrees) > 45.0F);   // sideways
+
+    skier.Run(3.0F, SlopeDownY(20.0F));
+    CHECK_NEAR(skier.last.pivotDegrees, 0.0F, 1e-4F);
+    CHECK(!skier.last.parked);
+    CHECK(skier.Speed() > 2.0F);
+}
+
+TEST_CASE("after a stop, an edge holds you across the hill and easing it off slips")
+{
+    auto skier = ParkedOn(SlopeDownY(30.0F));
+    skier.Run(1.0F, SlopeDownY(30.0F), { .edge = 1.0F });
+    CHECK(skier.Speed() < 0.05F);
+    CHECK(std::fabs(skier.last.pivotDegrees) > 85.0F);
+
+    skier.Run(0.5F, SlopeDownY(30.0F), { .edge = 0.2F });
+    CHECK(skier.state.velocity.y > 0.5F);
+    CHECK(skier.last.parked);
+    CHECK(std::fabs(skier.last.pivotDegrees) > 85.0F);  // still across the hill
+
+    skier.Run(0.5F, SlopeDownY(30.0F), { .edge = 1.0F });  // dig back in
+    CHECK(skier.Speed() < 0.05F);
+}
+
+TEST_CASE("on flat ground a parked twist comes back on its own")
+{
+    Skier skier;
+    skier.Run(0.5F, kFlat, { .skid = true });
+    CHECK(skier.last.parked);
+    skier.Run(skier.settings.sideslipSeconds + skier.settings.sideslipTurnSeconds + 0.1F, kFlat);
+    CHECK_NEAR(skier.yaw, 0.0F, 1e-4F);
+    CHECK(!skier.last.parked);
+}
+
+TEST_CASE("turning on the spot ends a side-slip where the skis are")
+{
+    auto skier = ParkedOn(SlopeDownY(20.0F));
+    skier.Run(0.2F, SlopeDownY(20.0F), { .edge = 1.0F });
+    const float before = skier.yaw;
+    skier.Step(SlopeDownY(20.0F), { .edge = 1.0F, .step = 1.0F });
+    CHECK(!skier.last.parked);
+    CHECK_NEAR(skier.last.pivotDegrees, 0.0F, 1e-6F);
+    CHECK(std::fabs(std::remainder(skier.yaw - before, 2.0F * std::numbers::pi_v<float>)) < 0.05F);
+}
+
+TEST_CASE("holding pivot on the uphill edge keeps you standing on a slope")
+{
+    Skier skier;  // facing straight down a 15 degree slope
+    skier.Run(1.5F, SlopeDownY(15.0F), { .edge = 1.0F, .skid = true });
+    CHECK(skier.Speed() < 0.05F);
+
+    skier.Run(3.0F, SlopeDownY(15.0F));
+    CHECK(skier.Speed() > 2.0F);  // let go and you're skiing again
+}
+
+TEST_CASE("while moving, pivot is limited to 90 degrees from the direction of travel")
+{
+    Skier skier;
+    skier.settings.pivotMaxDegrees = 150.0F;
+    skier.state.velocity = { 0.0F, 10.0F };
+    float maxSlip = 0.0F;
+    while (skier.Speed() >= 1.0F) {
+        skier.Step(kFlat, { .skid = true });
+        const float slip = std::atan2(skier.state.velocity.x, skier.state.velocity.y) - skier.yaw;
+        maxSlip = std::max(maxSlip, std::fabs(std::remainder(slip, 2.0F * std::numbers::pi_v<float>)));
+    }
+    CHECK(maxSlip <= kQuarterTurn + 1e-3F);
+}
+
+TEST_CASE("skid with no edge stops you and holds you on the hill")
+{
+    Skier skier;  // skiing straight down a 20 degree slope
+    skier.state.velocity = { 0.0F, 8.0F };
+    skier.Run(3.0F, SlopeDownY(20.0F), { .skid = true });
+    CHECK(skier.Speed() < 0.05F);
+
+    skier.Run(3.0F, SlopeDownY(20.0F));
+    CHECK(skier.Speed() > 2.0F);  // let go and you're skiing again
+}
+
+TEST_CASE("parked, the skis settle across the hill")
+{
+    auto skier = ParkedOn(SlopeDownY(20.0F));
+    CHECK_NEAR(std::fabs(skier.last.pivotDegrees), 90.0F, 0.5F);
+    CHECK(skier.last.nextHeading.has_value());
+    CHECK(AngleBetweenRadians(*skier.last.nextHeading, 0.0F) < 1e-3F);  // downhill
+}
+
+TEST_CASE("stopping while facing uphill comes out pointing downhill, not skiing backwards")
+{
+    Skier skier;  // slowing to a stop, skis pointing mostly up a slope that falls toward +Y
+    skier.yaw = 150.0F * kDegrees;
+    skier.state.velocity = Scale2(Forward(skier.yaw), 2.0F);
+    skier.Run(2.0F, SlopeDownY(20.0F), { .skid = true });
+    CHECK(skier.last.parked);
+
+    skier.Run(3.0F, SlopeDownY(20.0F));
+    CHECK(!skier.last.parked);
+    CHECK(AngleBetweenRadians(skier.yaw, 0.0F) < 0.1F);
+    CHECK(skier.Speed() > 1.0F);
+    CHECK(Dot(skier.state.velocity, Forward(skier.yaw)) > 0.0F);
+}
+
+TEST_CASE("skid with no edge twists into the hill and doesn't slide backwards from a traverse")
+{
+    Skier skier;  // traversing toward +X, the slope falls toward +Y on the skier's left
+    skier.yaw = kQuarterTurn;
+    skier.state.velocity = { 6.0F, 0.0F };
+    skier.Run(0.15F, SlopeDownY(25.0F), { .skid = true });
+    CHECK(skier.last.pivotDegrees > 0.0F);  // right, uphill
+
+    skier.Run(3.0F, SlopeDownY(25.0F), { .skid = true });
+    CHECK(skier.Speed() < 0.05F);
+}
+
+TEST_CASE("skid digs the edges in without any edge input")
+{
+    Skier skidding;
+    skidding.state.velocity = { 0.0F, 10.0F };
+    skidding.Run(1.0F, kFlat, { .skid = true });
+
+    Skier smearing;  // flat skis held across the direction of travel only smear
+    smearing.yaw = kQuarterTurn;
+    smearing.state.velocity = { 0.0F, 10.0F };
+    smearing.Run(1.0F, kFlat);
+
+    CHECK(skidding.Speed() < 2.0F);
+    CHECK(smearing.Speed() > 8.0F);
 }
 
 TEST_CASE("pivot already past the limit is not snapped back")
 {
     Skier skier;
-    skier.yaw = std::numbers::pi_v<float>;  // skiing backwards
+    skier.yaw = 2.0F;  // about 115 degrees right of travel, twisting further right
     skier.state.velocity = { 0.0F, 10.0F };
-    skier.Step(kFlat);
-    CHECK_NEAR(skier.yaw, std::numbers::pi_v<float>, 1e-4F);
+    skier.Step(kFlat, { .skid = true });
+    CHECK_NEAR(skier.yaw, 2.0F, 1e-4F);
+}
+
+TEST_CASE("stepping around works only when nearly stopped")
+{
+    Skier stopped;
+    stopped.Run(1.0F, kFlat, { .step = 1.0F });
+    CHECK_NEAR(stopped.yaw, stopped.settings.stepTurnDegreesPerSecond * kDegrees, 0.02F);
+
+    Skier moving;
+    moving.state.velocity = { 0.0F, 5.0F };
+    moving.Run(0.5F, kFlat, { .step = 1.0F });
+    CHECK_NEAR(moving.yaw, 0.0F, 1e-5F);
 }
 
 TEST_CASE("a tapped edge button leaves partial edge that releases slowly")
@@ -346,7 +508,7 @@ TEST_CASE("in the air, momentum is kept apart from drag and nothing steers it")
 {
     Skier skier;
     skier.Edged(1.0F).state.velocity = { 0.0F, 10.0F };
-    skier.Run(0.5F, SlopeDownY(30.0F), { .edge = 1.0F, .pivot = 1.0F, .grounded = false });
+    skier.Run(0.5F, SlopeDownY(30.0F), { .edge = 1.0F, .skid = true, .grounded = false });
     CHECK(skier.Speed() < 10.0F);
     CHECK(skier.Speed() > 9.0F);
     CHECK_NEAR(skier.state.velocity.x, 0.0F, 1e-5F);
@@ -364,8 +526,7 @@ TEST_CASE("yaw stays in [0, 2pi)")
 {
     Skier skier;
     skier.yaw = 0.01F;
-    skier.state.pivot = -1.0F;
-    skier.Step(kFlat, { .pivot = -1.0F });
+    skier.Step(kFlat, { .step = -1.0F });
     CHECK(skier.yaw >= 0.0F && skier.yaw < 2.0F * std::numbers::pi_v<float>);
     CHECK(skier.yaw > 6.0F);
 }

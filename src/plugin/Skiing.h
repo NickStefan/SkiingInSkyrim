@@ -37,10 +37,12 @@ namespace SkiingInSkyrim::Skiing
         float       slopeDegrees{ 0.0F };
         float       edgeDegrees{ 0.0F };
         float       maxEdgeDegrees{ 0.0F };
-        float       pivot{ 0.0F };
+        float       pivotDegrees{ 0.0F };  // signed: positive twists toward the right edge
+        float       maxPivotDegrees{ 0.0F };
         float       slipDegrees{ 0.0F };
         float       gripLimit{ 0.0F };
         bool        skidding{ false };
+        bool        parked{ false };
     };
 
     // Any thread.

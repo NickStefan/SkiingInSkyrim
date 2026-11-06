@@ -1,5 +1,6 @@
 #include "plugin/Skiing.h"
 
+#include "plugin/Camera.h"
 #include "plugin/Havok.h"
 #include "plugin/Input.h"
 #include "plugin/Settings.h"
@@ -79,7 +80,7 @@ namespace SkiingInSkyrim::Skiing
         // Whichever of triggers or mouse buttons last asked for edge decides how the edge releases.
         bool g_edgeFromButtons = true;
 
-        // Edge: triggers (analog) or mouse buttons. Pivot: left stick X or A/D.
+        // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Step turn: left stick X or A/D.
         void ReadControls(Core::SkiInput& ski)
         {
             const auto  input = Input::Get();
@@ -96,11 +97,13 @@ namespace SkiingInSkyrim::Skiing
             ski.edgeTarget = edge;
             ski.edgeFromButtons = g_edgeFromButtons;
 
+            ski.skidHeld = input.skid;
+
             const bool stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
             if (stickFresh && std::fabs(input.stickX) > kStickDeadzone) {
-                ski.pivotTarget = input.stickX;
+                ski.stepTurn = input.stickX;
             } else {
-                ski.pivotTarget = (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F);
+                ski.stepTurn = (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F);
             }
         }
 
@@ -134,6 +137,7 @@ namespace SkiingInSkyrim::Skiing
             g_debug.inactiveReason = reason;
             SetCommand({});
             SetOverlay({ .active = false, .inactiveReason = reason });
+            Camera::Reset();
             return;
         }
 
@@ -174,7 +178,9 @@ namespace SkiingInSkyrim::Skiing
         const auto physics = Settings::Physics();
         const auto step = Core::StepSki(g_debug.ski, input, physics);
 
+        Camera::Observe(player);
         SetYaw(player, step.yaw);
+        Camera::Apply(player, delta, step.yaw, step.velocity, step.nextHeading);
         SetCommand({ true, step.velocity });
         SetOverlay({
             .active = true,
@@ -186,10 +192,12 @@ namespace SkiingInSkyrim::Skiing
             .slopeDegrees = std::acos(std::clamp(ground.normal.z, -1.0F, 1.0F)) * 180.0F / std::numbers::pi_v<float>,
             .edgeDegrees = step.edgeDegrees,
             .maxEdgeDegrees = physics.maxEdgeDegrees,
-            .pivot = g_debug.ski.pivot,
+            .pivotDegrees = step.pivotDegrees,
+            .maxPivotDegrees = physics.pivotMaxDegrees,
             .slipDegrees = step.slipDegrees,
             .gripLimit = step.gripLimit,
             .skidding = step.skidding,
+            .parked = step.parked,
         });
 
         g_debug.active = true;

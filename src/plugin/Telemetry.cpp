@@ -2,6 +2,7 @@
 
 #include "core/GroundEstimate.h"
 #include "core/Slope.h"
+#include "plugin/Camera.h"
 #include "plugin/Havok.h"
 #include "plugin/Input.h"
 #include "plugin/Movement.h"
@@ -111,13 +112,15 @@ namespace SkiingInSkyrim::Telemetry
                 const auto smoothed = Core::AnalyzeSlope(estimate.normal, yaw);
                 const auto raw = Input::Get();
                 const auto move = Movement::Last();
+                const auto camera = Camera::GetInfo();
                 const char keys[] = { raw.forward ? 'W' : '-', raw.left ? 'A' : '-', raw.back ? 'S' : '-',
                     raw.right ? 'D' : '-', '\0' };
 
                 spdlog::info(
                     "telemetry{} ski={} ground={} unsup={:.2f}s src={} wall={} smooth-slope={:.1f} smooth-fall-line={:+.0f} "
-                    "| ski-vel=({:+.2f},{:+.2f}) ski-speed={:.2f} obs-speed={:.2f} blocked={} edge={:+.0f} pivot={:+.2f} "
+                    "| ski-vel=({:+.2f},{:+.2f}) ski-speed={:.2f} obs-speed={:.2f} blocked={} edge={:+.0f} pivot={:+.0f}{} "
                     "slip={:+.0f} grip={:.1f} skid={} triggers=({:.2f},{:.2f}) mouse={}{} "
+                    "| cam={} cam-yaw={:.0f} look={:+.0f} "
                     "| state={} support={} flips={} slope={:.1f} fall-line={:+.0f} "
                     "normal=({:+.3f},{:+.3f},{:+.3f}) supportNorm=({:+.3f},{:+.3f},{:+.3f}) "
                     "vel=({:+.2f},{:+.2f},{:+.2f})m/s ground-speed={:.2f}m/s move=({:+.2f},{:+.2f},{:+.2f}) yaw={:.0f} "
@@ -126,9 +129,11 @@ namespace SkiingInSkyrim::Telemetry
                     estimate.unsupportedSeconds, SourceName(estimate.source), estimate.wallContact, smoothed.angleDegrees,
                     smoothed.fallLineOffsetDegrees,
                     ski.ski.velocity.x, ski.ski.velocity.y, Core::Length(ski.ski.velocity), ski.observedSpeed,
-                    ski.step.blocked, ski.step.edgeDegrees, ski.ski.pivot, ski.step.slipDegrees, ski.step.gripLimit,
-                    ski.step.skidding, raw.triggerLeft, raw.triggerRight, raw.mouseLeft ? 'L' : '-',
-                    raw.mouseRight ? 'R' : '-',
+                    ski.step.blocked, ski.step.edgeDegrees, ski.step.pivotDegrees,
+                    raw.skid ? "(skid)" : ski.step.parked ? "(side-slip)" : "",
+                    ski.step.slipDegrees, ski.step.gripLimit, ski.step.skidding, raw.triggerLeft, raw.triggerRight,
+                    raw.mouseLeft ? 'L' : '-', raw.mouseRight ? 'R' : '-',
+                    camera.status, camera.yawDegrees, camera.lookDegrees,
                     StateName(state), SupportName(support), flips, slope.angleDegrees, slope.fallLineOffsetDegrees,
                     normal.x, normal.y, normal.z, supportNormal.x, supportNormal.y, supportNormal.z,
                     velocity.x, velocity.y, velocity.z, Core::HorizontalLength(velocity),

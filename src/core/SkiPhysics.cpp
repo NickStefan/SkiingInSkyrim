@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <numbers>
+#include <optional>
 
 namespace SkiingInSkyrim::Core
 {
@@ -31,6 +32,32 @@ namespace SkiingInSkyrim::Core
         // be able to turn around.
         constexpr float kPivotLimitMinSpeed = 1.0F;
 
+        // Edge (fraction of max) beyond which it decides which way pivot twists.
+        constexpr float kEdgeSideThreshold = 0.05F;
+
+        // With no edge, skid twists into the hill when the slope (sine of its angle) is at least this and the
+        // fall line is this far (sine of the angle) to one side of the skis; otherwise toward the last edge.
+        constexpr float kUphillMinSlope = 0.05F;
+        constexpr float kUphillMinSide = 0.25F;
+
+        constexpr float kMinSeconds = 1e-3F;
+
+        float SkidSide(const SkiState& state, const SkiInput& input, float edgeTarget) noexcept
+        {
+            if (std::fabs(edgeTarget) > kEdgeSideThreshold) {
+                return std::copysign(1.0F, edgeTarget);
+            }
+            if (input.grounded && input.hasNormal) {
+                const Vec2  downhill{ input.normal.x, input.normal.y };
+                const float slope = Length(downhill);
+                const float side = Dot(downhill, Right(input.yaw));
+                if (slope >= kUphillMinSlope && std::fabs(side) >= kUphillMinSide * slope) {
+                    return side > 0.0F ? -1.0F : 1.0F;
+                }
+            }
+            return state.lastEdgeSide;
+        }
+
         // Signed angle in (-pi, pi].
         float WrapSigned(float radians) noexcept
         {
@@ -51,6 +78,19 @@ namespace SkiingInSkyrim::Core
                 return after;
             }
             return travel + std::copysign(allowed, slipAfter);
+        }
+
+        float RotateToward(float yaw, float target, float maxChange) noexcept
+        {
+            return yaw + std::clamp(WrapSigned(target - yaw), -maxChange, maxChange);
+        }
+
+        // The heading across the fall line nearest to yaw.
+        float NearestAcross(float yaw, float fallLine) noexcept
+        {
+            const float right = fallLine + std::numbers::pi_v<float> / 2.0F;
+            const float left = fallLine - std::numbers::pi_v<float> / 2.0F;
+            return std::fabs(WrapSigned(right - yaw)) <= std::fabs(WrapSigned(left - yaw)) ? right : left;
         }
 
         float Approach(float value, float target, float maxChange) noexcept
@@ -106,15 +146,87 @@ namespace SkiingInSkyrim::Core
                                edgeTarget != 0.0F     ? settings.buttonEdgeRamp :
                                                         settings.buttonEdgeRelease;
         state.edge = Approach(state.edge, edgeTarget, edgeRate * dt);
-        state.pivot = Approach(state.pivot, std::clamp(input.pivotTarget, -1.0F, 1.0F), settings.pivotRamp * dt);
+        if (std::fabs(state.edge) > kEdgeSideThreshold) {
+            state.lastEdgeSide = std::copysign(1.0F, state.edge);
+        }
+
+        // Downhill heading, if the ground is steep enough to have one.
+        std::optional<float> fallLine;
+        if (input.grounded && input.hasNormal && Length(Vec2{ input.normal.x, input.normal.y }) >= kUphillMinSlope) {
+            fallLine = std::atan2(input.normal.x, input.normal.y);
+        }
+
+        // Skid twists the skis toward the edged side (or into the hill) while held, up to pivotMaxDegrees,
+        // and untwists the same amount on release. Only the twist actually applied is undone, so the limit
+        // and carving in between don't make the return overshoot.
+        //
+        // Stopping while skidding parks you: the skis settle across the hill, and after release you
+        // side-slip (for as long as any edge is held, or sideslipSeconds without) before they turn to point
+        // downhill, or back to where you were heading on flat ground.
+        const float pivotMax = settings.pivotMaxDegrees * kRadians;
+        const float buildRate = pivotMax / std::max(settings.pivotBuildSeconds, kMinSeconds);
+        const float speedBefore = Length(state.velocity);
+        float       yaw = input.yaw;
+        if (input.skidHeld) {
+            state.sideslipTime = 0.0F;
+            if (state.parked && fallLine) {
+                yaw = RotateToward(yaw, NearestAcross(yaw, *fallLine), buildRate * dt);
+            } else {
+                if (state.pivotAngle <= 0.0F) {
+                    state.pivotSide = SkidSide(state, input, edgeTarget);
+                }
+                const float twist = std::min(buildRate * dt, pivotMax - state.pivotAngle);
+                float       twisted = yaw + state.pivotSide * twist;
+                if (speedBefore >= kPivotLimitMinSpeed) {
+                    twisted = LimitPivot(yaw, twisted, state.velocity);
+                }
+                const float applied = std::max(0.0F, WrapSigned(twisted - yaw) * state.pivotSide);
+                yaw += state.pivotSide * applied;
+                state.pivotAngle += applied;
+            }
+            if (!state.parked && input.grounded && speedBefore < settings.parkSpeed) {
+                state.parked = true;
+                state.parkHeading = WrapAngle(yaw - state.pivotSide * state.pivotAngle);
+            }
+        } else if (state.parked && std::fabs(input.stepTurn) > 0.0F && speedBefore < kPivotLimitMinSpeed) {
+            // Turning on the spot keeps the skis where they are and ends the side-slip.
+            state.parked = false;
+            state.pivotAngle = 0.0F;
+        } else if (state.parked) {
+            if (std::fabs(state.edge) <= kEdgeSideThreshold) {
+                state.sideslipTime += dt;
+            }
+            const float turnRate = pivotMax / std::max(settings.sideslipTurnSeconds, kMinSeconds);
+            if (state.sideslipTime < settings.sideslipSeconds) {
+                if (fallLine) {
+                    yaw = RotateToward(yaw, NearestAcross(yaw, *fallLine), buildRate * dt);
+                }
+            } else {
+                const float target = fallLine ? *fallLine : state.parkHeading;
+                yaw = RotateToward(yaw, target, turnRate * dt);
+                if (std::fabs(WrapSigned(target - yaw)) < 1e-4F) {
+                    state.parked = false;
+                    state.pivotAngle = 0.0F;
+                }
+            }
+        } else if (state.pivotAngle > 0.0F) {
+            const float release = pivotMax / std::max(settings.pivotReturnSeconds, kMinSeconds) * dt;
+            const float untwist = std::min(release, state.pivotAngle);
+            yaw -= state.pivotSide * untwist;
+            state.pivotAngle -= untwist;
+        }
+        if (Length(state.velocity) < kPivotLimitMinSpeed) {
+            yaw += std::clamp(input.stepTurn, -1.0F, 1.0F) * settings.stepTurnDegreesPerSecond * kRadians * dt;
+        }
 
         const float edgeAngle = EdgeRadians(state.edge, settings);
-        const float pivotRate = settings.pivotDegreesPerSecond * kRadians *
-                                (1.0F + (settings.pivotEdgedFactor - 1.0F) * std::fabs(state.edge));
-        float yaw = input.yaw + state.pivot * pivotRate * dt;
-        if (settings.limitPivot && Length(state.velocity) >= kPivotLimitMinSpeed) {
-            yaw = LimitPivot(input.yaw, yaw, state.velocity);
-        }
+        // While skidding, the twisted stance digs the edges in by as much as it's twisted, whatever the
+        // edge input, and the same grip brakes along the skis.
+        const float stance = !input.skidHeld ? 0.0F :
+                             state.parked    ? 1.0F :
+                             pivotMax > 0.0F ? std::min(1.0F, state.pivotAngle / pivotMax) :
+                                               0.0F;
+        const float gripAngle = std::max(edgeAngle, stance * settings.maxEdgeDegrees * kRadians);
 
         auto velocity = state.velocity;
         if (input.hasObserved && state.commandedSpeed > settings.blockedMinSpeed &&
@@ -127,7 +239,7 @@ namespace SkiingInSkyrim::Core
         if (input.grounded) {
             const auto n = input.hasNormal ? input.normal : Vec3{ 0.0F, 0.0F, 1.0F };
             const float normalForce = settings.gravity * std::max(0.0F, n.z);
-            const float grip = normalForce * (settings.flatGrip + settings.edgeGrip * std::tan(edgeAngle));
+            const float grip = normalForce * (settings.flatGrip + settings.edgeGrip * std::tan(gripAngle));
             result.gripLimit = grip;
 
             // The edged ski follows its arc, but only as tightly as the grip can hold at this speed.
@@ -156,6 +268,8 @@ namespace SkiingInSkyrim::Core
                 result.skidding = true;
             }
             along += Dot(downhill, forward) * dt;
+            const float brake = stance * grip * dt;
+            along = std::fabs(along) <= brake ? 0.0F : along - std::copysign(brake, along);
             along = std::copysign(std::max(0.0F, std::fabs(along) - settings.snowFriction * normalForce * dt), along);
 
             velocity = Add(Scale(forward, along), Scale(right, newSide));
@@ -175,6 +289,14 @@ namespace SkiingInSkyrim::Core
         result.velocity = velocity;
         result.yaw = yaw;
         result.edgeDegrees = std::copysign(edgeAngle * kDegrees, state.edge);
+        result.parked = state.parked;
+        if (state.parked) {
+            result.nextHeading = fallLine ? *fallLine : state.parkHeading;
+            result.pivotDegrees = WrapSigned(yaw - *result.nextHeading) * kDegrees;
+        } else if (state.pivotAngle > 0.0F) {
+            result.nextHeading = WrapAngle(yaw - state.pivotSide * state.pivotAngle);
+            result.pivotDegrees = state.pivotSide * state.pivotAngle * kDegrees;
+        }
         if (state.commandedSpeed > 0.1F) {
             result.slipDegrees = std::atan2(Dot(velocity, Right(yaw)), Dot(velocity, Forward(yaw))) * kDegrees;
         }

@@ -1,5 +1,6 @@
 #include "plugin/Menu.h"
 
+#include "plugin/Camera.h"
 #include "plugin/Input.h"
 #include "plugin/Movement.h"
 #include "plugin/Overlay.h"
@@ -65,23 +66,55 @@ namespace SkiingInSkyrim::Menu
             }
         }
 
-        void RenderToggleKey()
+        void RenderCamera()
         {
-            const auto name = Settings::ToggleKeyName();
-            Line(fmt::format("Toggle key: {}", name.empty() ? "unbound" : name));
+            const auto camera = Camera::GetInfo();
+            Line(fmt::format("Chase camera: {}", camera.status));
+            if (camera.smoothCam) {
+                Line("SmoothCam: detected. It smooths the camera's position; if the chase camera stutters or "
+                     "fights it, turn one of them off.");
+            } else {
+                ImGuiMCP::TextDisabled("%s", "SmoothCam: not installed");
+            }
+        }
+
+        void RenderBinding(Settings::Binding binding, const char* label, const char* prompt)
+        {
+            ImGuiMCP::PushID(static_cast<int>(binding));
+            const auto name = Settings::BindingName(binding);
+            Line(fmt::format("{}: {}", label, name.empty() ? "unbound" : name));
             ImGuiMCP::SameLine();
-            if (Input::IsCapturing()) {
-                ImGuiMCP::TextColored(kWarn, "%s", "press a key, mouse button or gamepad button (Esc cancels)");
+            if (Input::Capturing() == binding) {
+                ImGuiMCP::TextColored(kWarn, "%s", prompt);
             } else {
                 if (ImGuiMCP::Button("Set")) {
-                    Input::BeginCapture();
+                    Input::BeginCapture(binding);
                 }
-                if (Settings::ToggleKey().Bound()) {
+                if (Settings::GetBinding(binding).Bound()) {
                     ImGuiMCP::SameLine();
                     if (ImGuiMCP::Button("Clear")) {
-                        Settings::SetToggleKey({});
+                        Settings::SetBinding(binding, {});
                         Settings::Save();
                     }
+                }
+            }
+            ImGuiMCP::PopID();
+        }
+
+        void RenderBindings()
+        {
+            using Settings::Binding;
+            RenderBinding(Binding::Toggle, "Toggle skiing",
+                "hold a modifier if you want one, then press and release a button (Esc cancels)");
+            RenderBinding(Binding::SkidKeyboard, "Skid (keyboard/mouse)", "press a key or mouse button (Esc cancels)");
+            RenderBinding(Binding::SkidGamepad, "Skid (gamepad)", "press a gamepad button (Esc cancels)");
+
+            const auto toggle = Settings::GetBinding(Binding::Toggle);
+            for (const auto skid : { Binding::SkidKeyboard, Binding::SkidGamepad }) {
+                const auto binding = Settings::GetBinding(skid);
+                if (toggle.Bound() && binding.Bound() && toggle.key == binding.key && !toggle.modifier.Bound()) {
+                    Colored(kWarn, "The toggle is the same button as skid: pressing skid will turn skiing off. "
+                                   "Give the toggle a modifier (hold e.g. LB while setting it) or another button.");
                 }
             }
         }
@@ -92,23 +125,38 @@ namespace SkiingInSkyrim::Menu
             if (ImGuiMCP::Checkbox("Skiing mode", &enabled)) {
                 SetSkiingEnabled(enabled, "menu");
             }
-            RenderToggleKey();
+            RenderBindings();
             bool overlay = Settings::ShowOverlay();
             if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {
                 Settings::SetShowOverlay(overlay);
                 Settings::Save();
             }
+            auto camera = Settings::Camera();
+            if (ImGuiMCP::Checkbox("Camera follows direction of travel", &camera.enabled)) {
+                Settings::SetCamera(camera);
+                Settings::Save();
+            }
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", "Third person only. The camera swings round behind where you're going; the "
+                                           "right stick or mouse looks around and it eases back.");
+            }
             ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
-                                        "an arc that tightens with more edge. Attacks and blocking are off while "
-                                        "skiing. Pivot (twist the skis) with the left stick or A/D; they stay where "
-                                        "you leave them.");
-            ImGuiMCP::TextWrapped("%s", "To slow down, pivot the skis across your direction of travel and edge hard: "
-                                        "a hockey stop. Flat skis only smear. W and S do nothing yet. Telemetry is "
-                                        "written to the log while enabled.");
+                                        "an arc that tightens with more edge. Attacks, blocking and readying weapons "
+                                        "are off while skiing.");
+            ImGuiMCP::TextWrapped("%s", "Hold skid to twist the skis sideways and dig the edges in: a hockey stop. "
+                                        "They twist toward the edge you're holding, or into the hill with no edge, "
+                                        "further the longer you hold. Keep holding and you stay put on the hill. "
+                                        "Release before you've stopped and they untwist straight away. Stop "
+                                        "completely and the skis settle across the hill; release and you side-slip, "
+                                        "with any edge you hold setting how much (tap skid to stop again), then they "
+                                        "turn to point downhill. When nearly stopped, the left stick or A/D turn "
+                                        "you on the spot. W and S do nothing yet. Telemetry is written to the log "
+                                        "while enabled.");
 
             ImGuiMCP::SeparatorText("Compatibility");
             RenderTdm();
             RenderMovementChain();
+            RenderCamera();
         }
 
         void __stdcall RenderTuning()
@@ -137,9 +185,26 @@ namespace SkiingInSkyrim::Menu
             if (changed) {
                 Settings::SetPhysics(physics);
             }
+
+            ImGuiMCP::SeparatorText("Camera");
+            auto camera = Settings::Camera();
+            bool cameraChanged = false;
+            for (const auto& field : Settings::CameraFields()) {
+                cameraChanged |= ImGuiMCP::SliderFloat(field.label, &(camera.*field.member), field.min, field.max,
+                    field.format);
+                finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
+                if (ImGuiMCP::IsItemHovered()) {
+                    ImGuiMCP::SetTooltip("%s", field.help);
+                }
+            }
+            if (cameraChanged) {
+                Settings::SetCamera(camera);
+            }
+
             ImGuiMCP::Spacing();
             if (ImGuiMCP::Button("Reset to defaults")) {
                 Settings::SetPhysics({});
+                Settings::SetCamera({ .enabled = Settings::Camera().enabled });
                 finished = true;
             }
             if (finished) {
