@@ -17,6 +17,7 @@ namespace SkiingInSkyrim::Skiing
         // A stick that hasn't reported for this long is ignored.
         constexpr float kStaleStickSeconds = 0.5F;
         constexpr float kStickDeadzone = 0.05F;
+        constexpr float kTriggerDeadzone = 0.02F;
 
         struct Command
         {
@@ -29,6 +30,15 @@ namespace SkiingInSkyrim::Skiing
 
         Core::GroundTracker g_ground;
         Debug               g_debug;
+
+        std::mutex  g_overlayLock;
+        OverlayData g_overlay;
+
+        void SetOverlay(const OverlayData& overlay)
+        {
+            std::scoped_lock lock(g_overlayLock);
+            g_overlay = overlay;
+        }
 
         void SetCommand(const Command& command)
         {
@@ -66,25 +76,32 @@ namespace SkiingInSkyrim::Skiing
             return nullptr;
         }
 
-        // Whichever of keys or stick last asked for edge decides how the edge releases.
-        bool g_edgeFromKeys = true;
+        // Whichever of triggers or mouse buttons last asked for edge decides how the edge releases.
+        bool g_edgeFromButtons = true;
 
+        // Edge: triggers (analog) or mouse buttons. Pivot: left stick X or A/D.
         void ReadControls(Core::SkiInput& ski)
         {
-            const auto input = Input::Get();
-            const float keys = (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F);
-            const bool  stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
+            const auto  input = Input::Get();
+            const float triggers = input.triggerRight - input.triggerLeft;
+            const float buttons = (input.mouseRight ? 1.0F : 0.0F) - (input.mouseLeft ? 1.0F : 0.0F);
             float       edge = 0.0F;
-            if (keys != 0.0F) {
-                g_edgeFromKeys = true;
-                edge = keys;
-            } else if (stickFresh && std::fabs(input.stickX) > kStickDeadzone) {
-                g_edgeFromKeys = false;
-                edge = input.stickX;
+            if (input.triggerLeft > kTriggerDeadzone || input.triggerRight > kTriggerDeadzone) {
+                g_edgeFromButtons = false;
+                edge = triggers;
+            } else if (input.mouseLeft || input.mouseRight) {
+                g_edgeFromButtons = true;
+                edge = buttons;
             }
             ski.edgeTarget = edge;
-            ski.edgeFromKeys = g_edgeFromKeys;
-            ski.pivotTarget = input.pivotRight - input.pivotLeft;
+            ski.edgeFromButtons = g_edgeFromButtons;
+
+            const bool stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
+            if (stickFresh && std::fabs(input.stickX) > kStickDeadzone) {
+                ski.pivotTarget = input.stickX;
+            } else {
+                ski.pivotTarget = (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F);
+            }
         }
 
         // The engine's velocity in the model's convention: horizontal direction, speed along the ground.
@@ -116,6 +133,7 @@ namespace SkiingInSkyrim::Skiing
             g_debug.active = false;
             g_debug.inactiveReason = reason;
             SetCommand({});
+            SetOverlay({ .active = false, .inactiveReason = reason });
             return;
         }
 
@@ -153,10 +171,26 @@ namespace SkiingInSkyrim::Skiing
         ReadControls(input);
         input.hasObserved = !starting;
         input.observed = observed;
-        const auto step = Core::StepSki(g_debug.ski, input, Settings::Physics());
+        const auto physics = Settings::Physics();
+        const auto step = Core::StepSki(g_debug.ski, input, physics);
 
         SetYaw(player, step.yaw);
         SetCommand({ true, step.velocity });
+        SetOverlay({
+            .active = true,
+            .inactiveReason = "",
+            .grounded = grounded,
+            .yaw = step.yaw,
+            .velocity = step.velocity,
+            .downhill = { ground.normal.x, ground.normal.y },
+            .slopeDegrees = std::acos(std::clamp(ground.normal.z, -1.0F, 1.0F)) * 180.0F / std::numbers::pi_v<float>,
+            .edgeDegrees = step.edgeDegrees,
+            .maxEdgeDegrees = physics.maxEdgeDegrees,
+            .pivot = g_debug.ski.pivot,
+            .slipDegrees = step.slipDegrees,
+            .gripLimit = step.gripLimit,
+            .skidding = step.skidding,
+        });
 
         g_debug.active = true;
         g_debug.inactiveReason = "";
@@ -182,4 +216,10 @@ namespace SkiingInSkyrim::Skiing
     }
 
     const Debug& GetDebug() { return g_debug; }
+
+    OverlayData GetOverlay()
+    {
+        std::scoped_lock lock(g_overlayLock);
+        return g_overlay;
+    }
 }

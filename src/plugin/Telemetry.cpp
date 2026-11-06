@@ -117,7 +117,7 @@ namespace SkiingInSkyrim::Telemetry
                 spdlog::info(
                     "telemetry{} ski={} ground={} unsup={:.2f}s src={} wall={} smooth-slope={:.1f} smooth-fall-line={:+.0f} "
                     "| ski-vel=({:+.2f},{:+.2f}) ski-speed={:.2f} obs-speed={:.2f} blocked={} edge={:+.0f} pivot={:+.2f} "
-                    "slip={:+.0f} grip={:.1f} skid={} triggers=({:.2f},{:.2f}) "
+                    "slip={:+.0f} grip={:.1f} skid={} triggers=({:.2f},{:.2f}) mouse={}{} "
                     "| state={} support={} flips={} slope={:.1f} fall-line={:+.0f} "
                     "normal=({:+.3f},{:+.3f},{:+.3f}) supportNorm=({:+.3f},{:+.3f},{:+.3f}) "
                     "vel=({:+.2f},{:+.2f},{:+.2f})m/s ground-speed={:.2f}m/s move=({:+.2f},{:+.2f},{:+.2f}) yaw={:.0f} "
@@ -127,7 +127,8 @@ namespace SkiingInSkyrim::Telemetry
                     smoothed.fallLineOffsetDegrees,
                     ski.ski.velocity.x, ski.ski.velocity.y, Core::Length(ski.ski.velocity), ski.observedSpeed,
                     ski.step.blocked, ski.step.edgeDegrees, ski.ski.pivot, ski.step.slipDegrees, ski.step.gripLimit,
-                    ski.step.skidding, raw.pivotLeft, raw.pivotRight,
+                    ski.step.skidding, raw.triggerLeft, raw.triggerRight, raw.mouseLeft ? 'L' : '-',
+                    raw.mouseRight ? 'R' : '-',
                     StateName(state), SupportName(support), flips, slope.angleDegrees, slope.fallLineOffsetDegrees,
                     normal.x, normal.y, normal.z, supportNormal.x, supportNormal.y, supportNormal.z,
                     velocity.x, velocity.y, velocity.z, Core::HorizontalLength(velocity),

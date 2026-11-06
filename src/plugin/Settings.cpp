@@ -32,14 +32,16 @@ namespace SkiingInSkyrim::Settings
             { "EdgeGripFactor", "Edge grip", "Sideways grip added by edging, times tan(edge angle). Limits how tight you can "
                                        "carve at speed and how hard a hockey stop brakes.",
                 &S::edgeGrip, 0.1F, 2.0F, "%.2f" },
-            { "StickEdgeRamp", "Stick edge ramp", "Full edge range per second when using the stick.", &S::stickEdgeRamp,
-                1.0F, 30.0F, "%.1f" },
-            { "KeyEdgeRamp", "Key edge ramp", "Full edge range per second while A or D is held.", &S::keyEdgeRamp, 0.2F,
-                10.0F, "%.2f" },
-            { "KeyEdgeRelease", "Key edge release", "Full edge range per second after A or D is released; slow keeps "
-                                                    "the edge from a tap.",
-                &S::keyEdgeRelease, 0.1F, 10.0F, "%.2f" },
-            { "PivotDegreesPerSecond", "Pivot rate", "Degrees per second the skis twist at full pivot on flat skis.",
+            { "TriggerEdgeRamp", "Trigger edge ramp", "Full edge range per second when edging with the triggers; "
+                                                      "smooths the trigger.",
+                &S::triggerEdgeRamp, 1.0F, 30.0F, "%.1f" },
+            { "MouseEdgeRamp", "Mouse edge ramp", "Full edge range per second while a mouse button is held.",
+                &S::buttonEdgeRamp, 0.2F, 10.0F, "%.2f" },
+            { "MouseEdgeRelease", "Mouse edge release", "Full edge range per second after a mouse button is released; "
+                                                        "slow keeps the edge from a tap.",
+                &S::buttonEdgeRelease, 0.1F, 10.0F, "%.2f" },
+            { "PivotDegreesPerSecond", "Pivot rate", "Degrees per second the skis twist at full stick (or A/D) on flat "
+                                                     "skis.",
                 &S::pivotDegreesPerSecond, 20.0F, 400.0F, "%.0f" },
             { "PivotEdgedFactor", "Pivot on edge", "Fraction of the pivot rate left at full edge.", &S::pivotEdgedFactor,
                 0.0F, 1.0F, "%.2f" },
@@ -53,11 +55,18 @@ namespace SkiingInSkyrim::Settings
                 3.0F, "%.2f" },
         };
 
+        constexpr BoolField kPhysicsSwitches[] = {
+            { "LimitPivot", "Limit pivot to 90 degrees from travel",
+                "While moving, pivot can't turn the skis further than across your direction of travel.",
+                &S::limitPivot },
+        };
+
         struct State
         {
             Core::SkiSettings physics;
             Hotkey            toggleKey;
             std::string       toggleKeyName;
+            bool              showOverlay{ false };
         };
 
         std::mutex g_lock;
@@ -78,6 +87,7 @@ namespace SkiingInSkyrim::Settings
     }
 
     std::span<const FloatField> PhysicsFields() noexcept { return kPhysicsFields; }
+    std::span<const BoolField>  PhysicsSwitches() noexcept { return kPhysicsSwitches; }
 
     void Load()
     {
@@ -97,6 +107,14 @@ namespace SkiingInSkyrim::Settings
                 if (const auto value = ini.GetFloat("Physics", field.key)) {
                     loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
                 }
+            }
+            for (const auto& field : kPhysicsSwitches) {
+                if (const auto value = ini.GetInt("Physics", field.key)) {
+                    loaded.physics.*field.member = *value != 0;
+                }
+            }
+            if (const auto value = ini.GetInt("Display", "ShowOverlay")) {
+                loaded.showOverlay = *value != 0;
             }
             spdlog::info("settings loaded from {}", kPath);
         } else {
@@ -121,9 +139,15 @@ namespace SkiingInSkyrim::Settings
         text += "; Toggle key: device (0 keyboard, 1 mouse, 2 gamepad, -1 unbound) and button id.\n";
         text += fmt::format("ToggleKeyDevice = {}\n", static_cast<int>(state.toggleKey.device));
         text += fmt::format("ToggleKey = {}\n\n", state.toggleKey.id);
+        text += "[Display]\n";
+        text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
+        text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
         text += "[Physics]\n";
         for (const auto& field : kPhysicsFields) {
             text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.physics.*field.member);
+        }
+        for (const auto& field : kPhysicsSwitches) {
+            text += fmt::format("; {} (1 on, 0 off)\n{} = {}\n", field.help, field.key, state.physics.*field.member ? 1 : 0);
         }
 
         std::ofstream file(kPath, std::ios::binary | std::ios::trunc);
@@ -165,5 +189,17 @@ namespace SkiingInSkyrim::Settings
             g_state.toggleKeyName = std::move(name);
         }
         spdlog::info("toggle key set to {}", key.Bound() ? fmt::format("device {} id {}", static_cast<int>(key.device), key.id) : "unbound");
+    }
+
+    bool ShowOverlay()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.showOverlay;
+    }
+
+    void SetShowOverlay(bool show)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.showOverlay = show;
     }
 }

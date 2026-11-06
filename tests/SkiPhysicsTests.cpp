@@ -25,7 +25,7 @@ namespace
     {
         float edge{ 0.0F };
         float pivot{ 0.0F };
-        bool  keys{ false };
+        bool  buttons{ false };
         bool  grounded{ true };
     };
 
@@ -52,7 +52,7 @@ namespace
             input.normal = normal;
             input.yaw = yaw;
             input.edgeTarget = controls.edge;
-            input.edgeFromKeys = controls.keys;
+            input.edgeFromButtons = controls.buttons;
             input.pivotTarget = controls.pivot;
             last = StepSki(state, input, settings);
             yaw = last.yaw;
@@ -209,18 +209,18 @@ TEST_CASE("hockey stop from a pivot: twisting the skis and edging scrubs most of
     Skier stopping;
     stopping.state.velocity = { 0.0F, 10.0F };
     float maxCrosswise = 0.0F;
-    for (int i = 0; i < 84; ++i) {
-        stopping.Step(kFlat, i < 36 ? Controls{ .pivot = 1.0F } : Controls{ .edge = 1.0F });
+    for (int i = 0; i < 96; ++i) {
+        stopping.Step(kFlat, i < 48 ? Controls{ .pivot = 1.0F } : Controls{ .edge = 1.0F });
         maxCrosswise = std::max(maxCrosswise, std::fabs(stopping.state.velocity.x));
     }
 
     Skier gliding;
     gliding.state.velocity = { 0.0F, 10.0F };
-    gliding.Run(1.4F, kFlat);
+    gliding.Run(1.6F, kFlat);
 
     CHECK(stopping.yaw > 70.0F * kDegrees);
     CHECK(stopping.Speed() < 3.0F);
-    CHECK(gliding.Speed() > 8.0F);
+    CHECK(gliding.Speed() > 7.0F);
     CHECK(maxCrosswise < 2.0F);  // the skier never swung round to travel where the skis point
 }
 
@@ -246,19 +246,64 @@ TEST_CASE("pivoting is harder on edge")
     CHECK_NEAR(edged.yaw / flat.yaw, edged.settings.pivotEdgedFactor, 0.02F);
 }
 
-TEST_CASE("a tapped edge key leaves partial edge that releases slowly")
+TEST_CASE("while moving, pivot stops at 90 degrees from the direction of travel")
 {
     Skier skier;
-    skier.Run(0.1F, kFlat, { .edge = 1.0F, .keys = true });
-    const float tapped = skier.state.edge;
-    CHECK_NEAR(tapped, skier.settings.keyEdgeRamp * 0.1F, 1e-3F);
+    skier.state.velocity = { 0.0F, 10.0F };
+    skier.Run(2.0F, kFlat, { .pivot = 1.0F });
+    CHECK(skier.Speed() > 5.0F);
+    const float slip = std::atan2(skier.state.velocity.x, skier.state.velocity.y) - skier.yaw;
+    CHECK(std::fabs(std::remainder(slip, 2.0F * std::numbers::pi_v<float>)) <= kQuarterTurn + 1e-3F);
+}
 
-    skier.Run(0.1F, kFlat, { .edge = 0.0F, .keys = true });
-    CHECK_NEAR(skier.state.edge, tapped - skier.settings.keyEdgeRelease * 0.1F, 1e-3F);
+TEST_CASE("released pivot leaves the skis where they are")
+{
+    Skier skier;
+    skier.state.velocity = { 0.0F, 10.0F };
+    skier.Run(0.3F, kFlat, { .pivot = 1.0F });
+    skier.Run(0.2F, kFlat);
+    const float held = skier.yaw;
+    skier.Run(0.3F, kFlat);
+    CHECK(held > 0.3F);
+    CHECK_NEAR(skier.yaw, held, 1e-5F);
+}
+
+TEST_CASE("without the limit, or when nearly stopped, pivot turns freely")
+{
+    Skier unlimited;
+    unlimited.settings.limitPivot = false;
+    unlimited.state.velocity = { 0.0F, 10.0F };
+    unlimited.Run(2.0F, kFlat, { .pivot = 1.0F });
+    CHECK(unlimited.yaw > std::numbers::pi_v<float>);
+
+    Skier slow;
+    slow.state.velocity = { 0.0F, 0.5F };
+    slow.Run(2.0F, kFlat, { .pivot = 1.0F });
+    CHECK(slow.yaw > std::numbers::pi_v<float>);
+}
+
+TEST_CASE("pivot already past the limit is not snapped back")
+{
+    Skier skier;
+    skier.yaw = std::numbers::pi_v<float>;  // skiing backwards
+    skier.state.velocity = { 0.0F, 10.0F };
+    skier.Step(kFlat);
+    CHECK_NEAR(skier.yaw, std::numbers::pi_v<float>, 1e-4F);
+}
+
+TEST_CASE("a tapped edge button leaves partial edge that releases slowly")
+{
+    Skier skier;
+    skier.Run(0.1F, kFlat, { .edge = 1.0F, .buttons = true });
+    const float tapped = skier.state.edge;
+    CHECK_NEAR(tapped, skier.settings.buttonEdgeRamp * 0.1F, 1e-3F);
+
+    skier.Run(0.1F, kFlat, { .edge = 0.0F, .buttons = true });
+    CHECK_NEAR(skier.state.edge, tapped - skier.settings.buttonEdgeRelease * 0.1F, 1e-3F);
     CHECK(skier.state.edge > 0.0F);
 }
 
-TEST_CASE("the stick sets edge quickly in both directions")
+TEST_CASE("the triggers set edge quickly in both directions")
 {
     Skier skier;
     skier.Run(0.2F, kFlat, { .edge = 0.7F });

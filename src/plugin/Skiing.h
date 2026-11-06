@@ -24,4 +24,25 @@ namespace SkiingInSkyrim::Skiing
 
     // Main thread.
     const Debug& GetDebug();
+
+    // What the debug overlay draws; directions use the model's horizontal convention.
+    struct OverlayData
+    {
+        bool        active{ false };
+        const char* inactiveReason{ "off" };
+        bool        grounded{ true };
+        float       yaw{ 0.0F };
+        Core::Vec2  velocity{};
+        Core::Vec2  downhill{};  // horizontal part of the ground normal
+        float       slopeDegrees{ 0.0F };
+        float       edgeDegrees{ 0.0F };
+        float       maxEdgeDegrees{ 0.0F };
+        float       pivot{ 0.0F };
+        float       slipDegrees{ 0.0F };
+        float       gripLimit{ 0.0F };
+        bool        skidding{ false };
+    };
+
+    // Any thread.
+    OverlayData GetOverlay();
 }

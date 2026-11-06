@@ -42,16 +42,18 @@ namespace SkiingInSkyrim::Core
         float flatGrip{ 0.12F };
         float edgeGrip{ 0.8F };
 
-        // Edge change, full range per second: analog stick, keys pressed, keys released.
-        float stickEdgeRamp{ 8.0F };
-        float keyEdgeRamp{ 2.0F };
-        float keyEdgeRelease{ 0.6F };
+        // Edge change, full range per second: analog triggers, digital buttons pressed, buttons released.
+        float triggerEdgeRamp{ 8.0F };
+        float buttonEdgeRamp{ 2.0F };
+        float buttonEdgeRelease{ 0.6F };
 
         // Pivot (twisting the skis under you), degrees per second at full input; a fully edged ski
         // pivots at pivotEdgedFactor of that.
-        float pivotDegreesPerSecond{ 150.0F };
+        float pivotDegreesPerSecond{ 120.0F };
         float pivotEdgedFactor{ 0.35F };
         float pivotRamp{ 8.0F };
+        // Pivot can't turn the skis more than 90 degrees from the direction of travel while moving.
+        bool limitPivot{ true };
 
         // If the engine delivers less than this fraction of what we asked for, something is in the way.
         float blockedRatio{ 0.75F };
@@ -68,7 +70,7 @@ namespace SkiingInSkyrim::Core
         Vec3  normal{ 0.0F, 0.0F, 1.0F };  // smoothed ground normal, unit length
         float yaw{ 0.0F };                 // current ski heading, radians
         float edgeTarget{ 0.0F };          // -1 left edge .. +1 right edge, fraction of max edge
-        bool  edgeFromKeys{ false };       // digital input: ramp in, release slowly
+        bool  edgeFromButtons{ false };    // digital input: ramp in, release slowly
         float pivotTarget{ 0.0F };         // -1 twist left .. +1 twist right
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention

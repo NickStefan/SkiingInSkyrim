@@ -23,13 +23,13 @@ namespace SkiingInSkyrim::Input
             kMovementKeyCount
         };
 
-        enum PivotButton : std::size_t
+        enum EdgeButton : std::size_t
         {
             kMouseLeft,
             kMouseRight,
             kTriggerLeft,
             kTriggerRight,
-            kPivotButtonCount
+            kEdgeButtonCount
         };
 
         struct KeyState
@@ -49,7 +49,7 @@ namespace SkiingInSkyrim::Input
         struct State
         {
             std::array<KeyState, kMovementKeyCount> keys;
-            std::array<KeyState, kPivotButtonCount> pivots;
+            std::array<KeyState, kEdgeButtonCount> edgeButtons;
             float                            stickX{ 0.0F };
             float                            stickY{ 0.0F };
             std::optional<Clock::time_point> lastStick;
@@ -67,7 +67,7 @@ namespace SkiingInSkyrim::Input
         constexpr std::uint32_t kLeftTrigger = 0x0009;
         constexpr std::uint32_t kRightTrigger = 0x000A;
 
-        std::optional<PivotButton> PivotButtonOf(const RE::ButtonEvent& button)
+        std::optional<EdgeButton> EdgeButtonOf(const RE::ButtonEvent& button)
         {
             const auto id = button.GetIDCode();
             switch (button.GetDevice()) {
@@ -91,8 +91,8 @@ namespace SkiingInSkyrim::Input
             if (button.IsDown() && !g_capturing && Settings::ToggleKey().Matches(button) && CanToggle()) {
                 SetSkiingEnabled(!IsSkiingEnabled(), "hotkey");
             }
-            if (const auto pivot = PivotButtonOf(button)) {
-                g_state.pivots[*pivot].Set(button);
+            if (const auto edgeButton = EdgeButtonOf(button)) {
+                g_state.edgeButtons[*edgeButton].Set(button);
                 return;
             }
             if (button.GetDevice() != RE::INPUT_DEVICE::kKeyboard) {
@@ -205,8 +205,10 @@ namespace SkiingInSkyrim::Input
         result.stickX = g_state.stickX;
         result.stickY = g_state.stickY;
         result.stickAge = Age(g_state.lastStick, now);
-        result.pivotLeft = std::max(HeldValue(g_state.pivots[kMouseLeft], now), HeldValue(g_state.pivots[kTriggerLeft], now));
-        result.pivotRight = std::max(HeldValue(g_state.pivots[kMouseRight], now), HeldValue(g_state.pivots[kTriggerRight], now));
+        result.triggerLeft = HeldValue(g_state.edgeButtons[kTriggerLeft], now);
+        result.triggerRight = HeldValue(g_state.edgeButtons[kTriggerRight], now);
+        result.mouseLeft = Held(g_state.edgeButtons[kMouseLeft], now);
+        result.mouseRight = Held(g_state.edgeButtons[kMouseRight], now);
 
         std::optional<Clock::time_point> latest;
         for (const auto& key : g_state.keys) {

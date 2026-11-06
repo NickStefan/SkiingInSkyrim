@@ -11,9 +11,10 @@ namespace SkiingInSkyrim::Input
         bool  right{ false };
         float stickX{ 0.0F };
         float stickY{ 0.0F };
-        // Pivot inputs, 0..1: left/right mouse button or left/right trigger, whichever is stronger.
-        float pivotLeft{ 0.0F };
-        float pivotRight{ 0.0F };
+        float triggerLeft{ 0.0F };  // 0..1
+        float triggerRight{ 0.0F };
+        bool  mouseLeft{ false };
+        bool  mouseRight{ false };
         // Seconds since the last keyboard movement event / left stick event; negative if never seen.
         float keyAge{ -1.0F };
         float stickAge{ -1.0F };
@@ -22,7 +23,7 @@ namespace SkiingInSkyrim::Input
     bool     Register();
     Snapshot Get();
 
-    // Hooks the attack/block handler so the pivot buttons don't swing weapons while skiing.
+    // Hooks the attack/block handler so the edge buttons don't swing weapons while skiing.
     void Install();
 
     // Toggle-key capture for the settings menu. While capturing, the next button press (other than

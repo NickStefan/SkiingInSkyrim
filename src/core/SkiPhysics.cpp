@@ -27,6 +27,32 @@ namespace SkiingInSkyrim::Core
             return radians < 0.0F ? radians + kTwoPi : radians;
         }
 
+        // Below this the direction of travel is too uncertain to limit against, and the skier needs to
+        // be able to turn around.
+        constexpr float kPivotLimitMinSpeed = 1.0F;
+
+        // Signed angle in (-pi, pi].
+        float WrapSigned(float radians) noexcept
+        {
+            constexpr float kPi = std::numbers::pi_v<float>;
+            radians = std::fmod(radians + kPi, 2.0F * kPi);
+            return (radians < 0.0F ? radians + 2.0F * kPi : radians) - kPi;
+        }
+
+        // Keeps pivot from taking the skis past 90 degrees from the direction of travel. Skis already
+        // beyond it (after a jump, say) are not snapped back; pivot just can't push them further.
+        float LimitPivot(float before, float after, Vec2 velocity) noexcept
+        {
+            const float travel = std::atan2(velocity.x, velocity.y);
+            const float slipBefore = WrapSigned(before - travel);
+            const float slipAfter = WrapSigned(after - travel);
+            const float allowed = std::max(std::fabs(slipBefore), std::numbers::pi_v<float> / 2.0F);
+            if (std::fabs(slipAfter) <= allowed) {
+                return after;
+            }
+            return travel + std::copysign(allowed, slipAfter);
+        }
+
         float Approach(float value, float target, float maxChange) noexcept
         {
             return value + std::clamp(target - value, -maxChange, maxChange);
@@ -76,9 +102,9 @@ namespace SkiingInSkyrim::Core
         SkiStep result;
 
         const float edgeTarget = std::clamp(input.edgeTarget, -1.0F, 1.0F);
-        const float edgeRate = !input.edgeFromKeys      ? settings.stickEdgeRamp :
-                               edgeTarget != 0.0F       ? settings.keyEdgeRamp :
-                                                          settings.keyEdgeRelease;
+        const float edgeRate = !input.edgeFromButtons ? settings.triggerEdgeRamp :
+                               edgeTarget != 0.0F     ? settings.buttonEdgeRamp :
+                                                        settings.buttonEdgeRelease;
         state.edge = Approach(state.edge, edgeTarget, edgeRate * dt);
         state.pivot = Approach(state.pivot, std::clamp(input.pivotTarget, -1.0F, 1.0F), settings.pivotRamp * dt);
 
@@ -86,6 +112,9 @@ namespace SkiingInSkyrim::Core
         const float pivotRate = settings.pivotDegreesPerSecond * kRadians *
                                 (1.0F + (settings.pivotEdgedFactor - 1.0F) * std::fabs(state.edge));
         float yaw = input.yaw + state.pivot * pivotRate * dt;
+        if (settings.limitPivot && Length(state.velocity) >= kPivotLimitMinSpeed) {
+            yaw = LimitPivot(input.yaw, yaw, state.velocity);
+        }
 
         auto velocity = state.velocity;
         if (input.hasObserved && state.commandedSpeed > settings.blockedMinSpeed &&

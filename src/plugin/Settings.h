@@ -28,7 +28,16 @@ namespace SkiingInSkyrim::Settings
         const char* format;
     };
 
+    struct BoolField
+    {
+        const char* key;
+        const char* label;
+        const char* help;
+        bool Core::SkiSettings::*member;
+    };
+
     [[nodiscard]] std::span<const FloatField> PhysicsFields() noexcept;
+    [[nodiscard]] std::span<const BoolField>  PhysicsSwitches() noexcept;
 
     // Main thread, once game data and input devices exist.
     void Load();
@@ -43,4 +52,7 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] std::string ToggleKeyName();
     // Looks up the key's display name through the game's input manager when bound.
     void                      SetToggleKey(Hotkey key);
+
+    [[nodiscard]] bool ShowOverlay();
+    void               SetShowOverlay(bool show);
 }

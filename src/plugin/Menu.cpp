@@ -2,6 +2,7 @@
 
 #include "plugin/Input.h"
 #include "plugin/Movement.h"
+#include "plugin/Overlay.h"
 #include "plugin/Settings.h"
 #include "plugin/SkiingState.h"
 #include "plugin/Tdm.h"
@@ -92,9 +93,15 @@ namespace SkiingInSkyrim::Menu
                 SetSkiingEnabled(enabled, "menu");
             }
             RenderToggleKey();
-            ImGuiMCP::TextWrapped("%s", "Edge with A/D or the left stick: the skis carve an arc that tightens with more "
-                                        "edge. Pivot (twist the skis) with the mouse buttons or the triggers; attacks "
-                                        "and blocking are off while skiing.");
+            bool overlay = Settings::ShowOverlay();
+            if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {
+                Settings::SetShowOverlay(overlay);
+                Settings::Save();
+            }
+            ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
+                                        "an arc that tightens with more edge. Attacks and blocking are off while "
+                                        "skiing. Pivot (twist the skis) with the left stick or A/D; they stay where "
+                                        "you leave them.");
             ImGuiMCP::TextWrapped("%s", "To slow down, pivot the skis across your direction of travel and edge hard: "
                                         "a hockey stop. Flat skis only smear. W and S do nothing yet. Telemetry is "
                                         "written to the log while enabled.");
@@ -111,6 +118,15 @@ namespace SkiingInSkyrim::Menu
             auto physics = Settings::Physics();
             bool changed = false;
             bool finished = false;
+            for (const auto& field : Settings::PhysicsSwitches()) {
+                if (ImGuiMCP::Checkbox(field.label, &(physics.*field.member))) {
+                    changed = true;
+                    finished = true;
+                }
+                if (ImGuiMCP::IsItemHovered()) {
+                    ImGuiMCP::SetTooltip("%s", field.help);
+                }
+            }
             for (const auto& field : Settings::PhysicsFields()) {
                 changed |= ImGuiMCP::SliderFloat(field.label, &(physics.*field.member), field.min, field.max, field.format);
                 finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
@@ -143,6 +159,7 @@ namespace SkiingInSkyrim::Menu
         SKSEMenuFramework::AddSectionItem("Settings", RenderSettings);
         SKSEMenuFramework::AddSectionItem("Tuning", RenderTuning);
         SKSEMenuFramework::AddInputEvent(OnFrameworkInput);
+        SKSEMenuFramework::AddHudElement(Overlay::Render);
         return true;
     }
 }
