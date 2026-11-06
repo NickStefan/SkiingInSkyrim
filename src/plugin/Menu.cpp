@@ -127,13 +127,25 @@ namespace SkiingInSkyrim::Menu
             }
             RenderBindings();
             bool rightStick = Settings::AimWithRightStick();
-            if (ImGuiMCP::Checkbox("Steer with the right stick", &rightStick)) {
+            if (ImGuiMCP::Checkbox("Steer with the right stick or mouse", &rightStick)) {
                 Settings::SetAimWithRightStick(rightStick);
                 Settings::Save();
             }
             if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "The right stick steers instead of the left, and stops turning the camera "
-                                           "while skiing; push the left stick sideways to look around.");
+                ImGuiMCP::SetTooltip("%s", "The right stick or mouse steers instead of the left stick or A/D, and stops "
+                                           "turning the camera while skiing. The left stick or A/D look around; W tucks "
+                                           "and S brakes.");
+            }
+            if (rightStick) {
+                float sensitivity = Settings::MouseSteerSensitivity();
+                if (ImGuiMCP::SliderFloat("Mouse steering", &sensitivity, Settings::kMouseSteerMin,
+                        Settings::kMouseSteerMax, "%.3f")) {
+                    Settings::SetMouseSteerSensitivity(sensitivity);
+                    Settings::Save();
+                }
+                if (ImGuiMCP::IsItemHovered()) {
+                    ImGuiMCP::SetTooltip("%s", "Degrees the skis turn per count of mouse movement.");
+                }
             }
             bool overlay = Settings::ShowOverlay();
             if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {

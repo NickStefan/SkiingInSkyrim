@@ -89,7 +89,13 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] bool TraceShaking();
     void               SetTraceShaking(bool trace);
 
-    // Steering on the right stick instead of the left; the left stick then looks around.
+    // Steering on the right stick or mouse instead of the left stick or A/D; the left stick or A/D then look
+    // around.
     [[nodiscard]] bool AimWithRightStick();
     void               SetAimWithRightStick(bool right);
+    // Degrees the skis turn per count of mouse movement, steering with the mouse.
+    inline constexpr float kMouseSteerMin = 0.01F;
+    inline constexpr float kMouseSteerMax = 0.5F;
+    [[nodiscard]] float MouseSteerSensitivity();
+    void                SetMouseSteerSensitivity(float degreesPerCount);
 }

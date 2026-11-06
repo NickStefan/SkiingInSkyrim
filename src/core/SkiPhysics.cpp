@@ -67,6 +67,9 @@ namespace SkiingInSkyrim::Core
 
         // A trigger squeezed past this (fraction of full edge) from below it is a skating stride.
         constexpr float kSkateSqueeze = 0.5F;
+        // A mouse-button stride only edges this far (fraction of full edge) and releases at trigger speed,
+        // so the skis glide between strides instead of carving.
+        constexpr float kSkateButtonEdge = 0.25F;
         // Skating needs the stick pushed at least this firmly within kSkateAimDegrees of the skis.
         constexpr float kSkateAimStrength = 0.3F;
         constexpr float kSkateAimDegrees = 45.0F;
@@ -256,10 +259,15 @@ namespace SkiingInSkyrim::Core
         SkiStep result;
 
         const float edgeTarget = std::clamp(input.edgeTarget, -1.0F, 1.0F);
-        const float edgeRate = !input.edgeFromButtons ? settings.triggerEdgeRamp :
-                               edgeTarget != 0.0F     ? settings.buttonEdgeRamp :
-                                                        settings.buttonEdgeRelease;
-        state.edge = Approach(state.edge, edgeTarget, edgeRate * dt);
+        const bool  skateEdge = input.edgeFromButtons && state.skateEdging;
+        const float edgeRate = !input.edgeFromButtons || skateEdge ? settings.triggerEdgeRamp :
+                               edgeTarget != 0.0F                  ? settings.buttonEdgeRamp :
+                                                                     settings.buttonEdgeRelease;
+        const float edgeGoal = skateEdge ? std::clamp(edgeTarget, -kSkateButtonEdge, kSkateButtonEdge) : edgeTarget;
+        state.edge = Approach(state.edge, edgeGoal, edgeRate * dt);
+        if (!input.edgeFromButtons || (edgeTarget == 0.0F && state.edge == 0.0F)) {
+            state.skateEdging = false;
+        }
         if (std::fabs(state.edge) > kEdgeSideThreshold) {
             state.lastEdgeSide = std::copysign(1.0F, state.edge);
         }
@@ -303,15 +311,17 @@ namespace SkiingInSkyrim::Core
             }
         }
 
-        // Steering: the skis turn toward where the stick aims, as firmly as it's pushed. Pushing firmly the
-        // way they already point tucks.
+        // Steering: the skis turn toward where the stick aims, as firmly as it's pushed, or directly by the
+        // mouse. Pushing firmly the way they already point tucks.
         const float aimStrength = std::clamp(input.aimStrength, 0.0F, 1.0F);
         float       tuck = 0.0F;
+        const float maxTurn = settings.steerDegreesPerSecond * kRadians * dt;
+        yaw += std::clamp(input.yawTurn, -maxTurn, maxTurn);
         if (aimStrength > 0.0F) {
             tuck = Smoothstep(kTuckStartStrength, kTuckFullStrength, aimStrength) *
                    Smoothstep(kTuckStartAlign, kTuckFullAlign, std::cos(input.aimYaw - yaw));
             yaw = RotateToward(yaw, input.aimYaw, aimStrength * settings.steerDegreesPerSecond * kRadians * dt);
-        } else if (!input.skidHeld && input.grounded && state.pivotAngle <= 0.0F &&
+        } else if (input.yawTurn == 0.0F && !input.skidHeld && input.grounded && state.pivotAngle <= 0.0F &&
                    std::fabs(state.edge) <= kEdgeSideThreshold && settings.selfAlignDegreesPerSecond > 0.0F) {
             const float weight = Smoothstep(kAlignStartSpeed, kAlignFullSpeed, speedBefore);
             if (weight > 0.0F) {
@@ -346,6 +356,7 @@ namespace SkiingInSkyrim::Core
                 const float push = settings.skateImpulse * alternate * (1.0F - speedNow / settings.skateMaxSpeed);
                 velocity = Add(velocity, Scale(Forward(yaw), push));
                 state.lastSkateSide = side;
+                state.skateEdging = input.edgeFromButtons;
                 result.skated = true;
             }
         }

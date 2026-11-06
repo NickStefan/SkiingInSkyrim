@@ -28,9 +28,11 @@ namespace SkiingInSkyrim::Input
 
     bool     Register();
     Snapshot Get();
+    // Mouse movement sideways (raw counts) since the last call.
+    int TakeMouseX();
 
     // Hooks the attack/block and ready-weapon handlers so skiing controls don't swing or sheathe weapons, and
-    // the look handler so the right stick doesn't turn the camera while it steers.
+    // the look handler so the right stick and mouse don't turn the camera while they steer.
     void Install();
 
     // Binding capture for the settings menu. While capturing, the next button press (other than Escape,

@@ -57,6 +57,7 @@ namespace SkiingInSkyrim::Input
             float                                    rightStickX{ 0.0F };
             float                                    rightStickY{ 0.0F };
             std::optional<Clock::time_point>         lastRightStick;
+            int                                      mouseX{ 0 };
         };
 
         // Input events, the menu framework's input callback and PlayerCharacter::Update all run on the
@@ -178,6 +179,9 @@ namespace SkiingInSkyrim::Input
                     case RE::INPUT_EVENT_TYPE::kThumbstick:
                         OnThumbstick(*static_cast<RE::ThumbstickEvent*>(event));
                         break;
+                    case RE::INPUT_EVENT_TYPE::kMouseMove:
+                        g_state.mouseX += static_cast<RE::MouseMoveEvent*>(event)->mouseInputX;
+                        break;
                     default:
                         break;
                     }
@@ -208,16 +212,18 @@ namespace SkiingInSkyrim::Input
             static inline REL::Relocation<decltype(thunk)> func;
         };
 
-        // Steering with the right stick, it mustn't also turn the camera: the aim is relative to the camera,
-        // so the two would chase each other round.
+        // Steering with the right stick or mouse, they mustn't also turn the camera: the stick's aim is
+        // relative to the camera, so the two would chase each other round.
         struct SuppressSteeringLook
         {
             static bool thunk(RE::LookHandler* handler, RE::InputEvent* event)
             {
-                if (Skiing::GetDebug().active && Settings::AimWithRightStick() && event &&
-                    event->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick &&
-                    static_cast<RE::ThumbstickEvent*>(event)->IsRight()) {
-                    return false;
+                if (Skiing::GetDebug().active && Settings::AimWithRightStick() && event) {
+                    const auto type = event->GetEventType();
+                    if (type == RE::INPUT_EVENT_TYPE::kMouseMove ||
+                        (type == RE::INPUT_EVENT_TYPE::kThumbstick && static_cast<RE::ThumbstickEvent*>(event)->IsRight())) {
+                        return false;
+                    }
                 }
                 return func(handler, event);
             }
@@ -283,6 +289,8 @@ namespace SkiingInSkyrim::Input
         result.keyAge = Age(latest, now);
         return result;
     }
+
+    int TakeMouseX() { return std::exchange(g_state.mouseX, 0); }
 
     void BeginCapture(Settings::Binding binding) noexcept
     {

@@ -31,6 +31,7 @@ namespace
         float aimYaw{ 0.0F };  // where the stick aims
         bool  buttons{ false };
         bool  grounded{ true };
+        float yawTurn{ 0.0F };  // direct turn this frame (mouse)
     };
 
     // Packed snow: most tests are about the base model.
@@ -65,6 +66,7 @@ namespace
             input.yaw = yaw;
             input.edgeTarget = controls.edge;
             input.edgeFromButtons = controls.buttons;
+            input.yawTurn = controls.yawTurn;
             input.skidHeld = controls.skid;
             input.aimStrength = controls.aim;
             input.aimYaw = controls.aimYaw;
@@ -846,4 +848,30 @@ TEST_CASE("on the flat, alternating trigger squeezes with the stick forward skat
     Skier steep;  // not on a real slope
     steep.Step(SlopeDownY(25.0F), { .edge = 1.0F, .aim = 1.0F });
     CHECK(!steep.last.skated);
+}
+
+TEST_CASE("a mouse-button skating stride edges lightly and lets go quickly, so the skis glide")
+{
+    Skier skater;
+    skater.Step(kFlat, { .edge = 1.0F, .aim = 1.0F, .buttons = true });
+    CHECK(skater.last.skated);
+    skater.Run(0.3F, kFlat, { .edge = 1.0F, .aim = 1.0F, .buttons = true });
+    CHECK(std::fabs(skater.state.edge) <= 0.25F + 1e-4F);
+    skater.Run(0.05F, kFlat, { .aim = 1.0F, .buttons = true });
+    CHECK_NEAR(skater.state.edge, 0.0F, 1e-4F);
+
+    Skier carver;  // a click that isn't a stride (stick not pushed) still builds full edge
+    carver.Run(0.6F, kFlat, { .edge = 1.0F, .buttons = true });
+    CHECK(carver.state.edge > 0.9F);
+}
+
+TEST_CASE("mouse steering turns the skis directly, no faster than the steering rate")
+{
+    Skier skier;
+    skier.Step(kFlat, { .yawTurn = 0.01F });
+    CHECK_NEAR(skier.yaw, 0.01F, 1e-5F);
+
+    Skier flick;
+    flick.Step(kFlat, { .yawTurn = 1.0F });
+    CHECK_NEAR(flick.yaw, flick.settings.steerDegreesPerSecond * kDegrees * kFrame, 1e-4F);
 }

@@ -170,6 +170,7 @@ namespace SkiingInSkyrim::Settings
             std::array<std::string, kBindingCount>  bindingNames;
             bool                                    showOverlay{ false };
             bool                                    aimWithRightStick{ false };
+            float                                   mouseSteerSensitivity{ 0.1F };
             bool                                    traceShaking{ false };
         };
 
@@ -248,6 +249,9 @@ namespace SkiingInSkyrim::Settings
             if (const auto value = ini.GetInt("Controls", "AimWithRightStick")) {
                 loaded.aimWithRightStick = *value != 0;
             }
+            if (const auto value = ini.GetFloat("Controls", "MouseSteerSensitivity")) {
+                loaded.mouseSteerSensitivity = std::clamp(*value, kMouseSteerMin, kMouseSteerMax);
+            }
             for (const auto& field : kPhysicsFields) {
                 if (const auto value = ini.GetFloat("Physics", field.key)) {
                     loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
@@ -301,8 +305,11 @@ namespace SkiingInSkyrim::Settings
             WriteButton(text, kBindings[i].key, state.bindings[i].key);
             WriteButton(text, std::string(kBindings[i].key) + "Modifier", state.bindings[i].modifier);
         }
-        text += "; Steer with the right stick instead of the left (1 on, 0 off). The left stick then looks around.\n";
+        text += "; Steer with the right stick or mouse instead of the left stick or A/D (1 on, 0 off). The left stick "
+                "or A/D then look around, and W tucks.\n";
         text += fmt::format("AimWithRightStick = {}\n", state.aimWithRightStick ? 1 : 0);
+        text += "; Steering with the mouse: degrees the skis turn per count of mouse movement.\n";
+        text += fmt::format("MouseSteerSensitivity = {:.3f}\n", state.mouseSteerSensitivity);
         text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
@@ -411,5 +418,17 @@ namespace SkiingInSkyrim::Settings
     {
         std::scoped_lock lock(g_lock);
         g_state.aimWithRightStick = right;
+    }
+
+    float MouseSteerSensitivity()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.mouseSteerSensitivity;
+    }
+
+    void SetMouseSteerSensitivity(float degreesPerCount)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.mouseSteerSensitivity = std::clamp(degreesPerCount, kMouseSteerMin, kMouseSteerMax);
     }
 }

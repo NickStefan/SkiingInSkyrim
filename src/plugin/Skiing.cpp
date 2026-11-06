@@ -20,8 +20,15 @@ namespace SkiingInSkyrim::Skiing
         constexpr float kStaleStickSeconds = 0.5F;
         constexpr float kStickSmoothingSeconds = 0.08F;
         constexpr float kTriggerDeadzone = 0.02F;
-        // Steering with the right stick, the left stick's sideways push turns the camera this fast at full.
+        // Steering with the right stick or mouse, the left stick's sideways push or A/D turn the camera this
+        // fast at full.
         constexpr float kLookDegreesPerSecond = 150.0F;
+        // Held movement keys push the aim from nothing to full over this long (with the stick's squared
+        // response), so a tap nudges and a hold turns; starting again whenever the keys held change.
+        constexpr float kKeyAimBuildSeconds = 0.6F;
+        // Mouse steering beyond what the skis can turn in a frame carries over, fading with this time
+        // constant, so a quick flick still turns but doesn't keep turning.
+        constexpr float kMouseCarrySeconds = 0.1F;
 
         struct Command
         {
@@ -87,14 +94,19 @@ namespace SkiingInSkyrim::Skiing
         // The steering stick, smoothed so thumb twitches don't become ski twitches.
         Core::Vec2 g_stick{};
 
+        Core::Vec2 g_heldKeys{};
+        float      g_keyHold = 0.0F;
+        float      g_mouseTurn = 0.0F;  // radians of mouse steering not yet applied
+
         Core::Vec2 FreshStick(float x, float y, float age)
         {
             return age >= 0.0F && age < kStaleStickSeconds ? Core::Vec2{ x, y } : Core::Vec2{};
         }
 
         // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Aim: the steering stick (left, or right
-        // if set) or W/A/S/D, relative to viewYaw (where the camera looks). Returns radians to turn the camera
-        // this frame: steering with the right stick, the left stick looks around instead.
+        // if set) or W/A/S/D, relative to viewYaw (where the camera looks). Steering with the right stick, the
+        // mouse turns the skis directly, W tucks, S brakes, and the left stick and A/D look around instead.
+        // Returns radians to turn the camera this frame.
         float ReadControls(Core::SkiInput& ski, float viewYaw, float delta, const Core::SkiSettings& physics)
         {
             const auto  input = Input::Get();
@@ -126,20 +138,41 @@ namespace SkiingInSkyrim::Skiing
 
             const Core::Vec2 keys{ (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F),
                 (input.forward ? 1.0F : 0.0F) - (input.back ? 1.0F : 0.0F) };
-            if (keys.x != 0.0F || keys.y != 0.0F) {
-                ski.aimYaw = viewYaw + std::atan2(keys.x, keys.y);
-                ski.aimStrength = 1.0F;
+            g_keyHold = keys.x != g_heldKeys.x || keys.y != g_heldKeys.y ? 0.0F : g_keyHold + std::max(0.0F, delta);
+            g_heldKeys = keys;
+            const float keyBuild = std::min(1.0F, g_keyHold / kKeyAimBuildSeconds);
+            const float keyStrength = keyBuild * keyBuild;
+
+            constexpr float kRadians = std::numbers::pi_v<float> / 180.0F;
+            const int       mouseX = Input::TakeMouseX();
+            if (!rightSteers) {
+                g_mouseTurn = 0.0F;
+                if (keys.x != 0.0F || keys.y != 0.0F) {
+                    ski.aimYaw = viewYaw + std::atan2(keys.x, keys.y);
+                    ski.aimStrength = keyStrength;
+                } else {
+                    ski.aimYaw = viewYaw + std::atan2(g_stick.x, g_stick.y);
+                    ski.aimStrength = Core::AimStrength(g_stick.x, g_stick.y, physics.aimDeadzone);
+                }
+                return 0.0F;
+            }
+
+            g_mouseTurn += static_cast<float>(mouseX) * Settings::MouseSteerSensitivity() * kRadians;
+            const float maxTurn = physics.steerDegreesPerSecond * kRadians * std::max(0.0F, delta);
+            ski.yawTurn = std::clamp(g_mouseTurn, -maxTurn, maxTurn);
+            g_mouseTurn = (g_mouseTurn - ski.yawTurn) * std::exp(-std::max(0.0F, delta) / kMouseCarrySeconds);
+            if (keys.y > 0.0F) {
+                ski.aimYaw = ski.yaw;
+                ski.aimStrength = keyStrength;
+            } else if (keys.y < 0.0F) {
+                ski.aimYaw = viewYaw + std::numbers::pi_v<float>;
+                ski.aimStrength = keyStrength;
             } else {
                 ski.aimYaw = viewYaw + std::atan2(g_stick.x, g_stick.y);
                 ski.aimStrength = Core::AimStrength(g_stick.x, g_stick.y, physics.aimDeadzone);
             }
-
-            if (!rightSteers) {
-                return 0.0F;
-            }
-            const float look = Core::AimStrength(left.x, 0.0F, physics.aimDeadzone);
-            return std::copysign(look, left.x) * kLookDegreesPerSecond * std::numbers::pi_v<float> / 180.0F *
-                   std::max(0.0F, delta);
+            const float look = keys.x != 0.0F ? keys.x : std::copysign(Core::AimStrength(left.x, 0.0F, physics.aimDeadzone), left.x);
+            return look * kLookDegreesPerSecond * kRadians * std::max(0.0F, delta);
         }
 
         // The engine's velocity in the model's convention: horizontal direction, speed along the ground.
@@ -326,6 +359,8 @@ namespace SkiingInSkyrim::Skiing
             g_ground.Reset();
             g_skidFromToggle = true;
             g_stick = {};
+            g_mouseTurn = 0.0F;
+            Input::TakeMouseX();
             g_height.agreeing = 0;
             g_sinceStride = kSkatingShownSeconds;
         }
