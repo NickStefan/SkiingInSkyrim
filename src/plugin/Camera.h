@@ -9,10 +9,12 @@ namespace SkiingInSkyrim::Camera
 
     // Main thread, while skiing, around changing the player's yaw: Observe() reads the camera's world yaw
     // before the change, Apply() points the third-person camera along the direction of travel after it.
-    // heading: while skidding or parked, where the skier will head afterwards; the camera looks there.
     void Observe(RE::PlayerCharacter* player);
-    void Apply(RE::PlayerCharacter* player, float delta, float skiYaw, Core::Vec2 velocity,
-        std::optional<float> heading);
+    void Apply(RE::PlayerCharacter* player, float delta, Core::Vec2 velocity);
+
+    // After Observe(): the world yaw the player is looking along, which the stick aims relative to. In
+    // first person, or with the camera not orbiting, that's the player's own yaw.
+    [[nodiscard]] float ViewYaw(RE::PlayerCharacter* player);
 
     // Main thread, while not skiing.
     void Reset();

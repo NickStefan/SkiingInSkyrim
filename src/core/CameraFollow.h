@@ -2,12 +2,10 @@
 
 #include "core/SkiPhysics.h"
 
-#include <optional>
-
 namespace SkiingInSkyrim::Core
 {
-    // Chase camera yaw: follows the direction of travel (the skis' heading when nearly stopped) with a
-    // lag, plus a look-around offset from the player's own camera input that eases back once they stop
+    // Chase camera yaw: follows the direction of travel with a lag, and stays put when nearly stopped (the
+    // stick aims relative to the camera, so following the skis would chase the aim round), plus a look-around offset from the player's own camera input that eases back once they stop
     // looking. Yaws are world radians in the ski model's convention.
     struct CameraFollowSettings
     {
@@ -24,7 +22,7 @@ namespace SkiingInSkyrim::Core
         // After the player stops looking around, wait this long, then ease back with this time constant.
         float lookHoldSeconds{ 0.6F };
         float lookReturnSeconds{ 0.5F };
-        // Between these speeds the reference blends from the skis' heading to the direction of travel.
+        // Below travelMinSpeed the camera holds still; by travelFullSpeed it follows at the full rate.
         float travelMinSpeed{ 0.5F };
         float travelFullSpeed{ 2.0F };
     };
@@ -40,9 +38,7 @@ namespace SkiingInSkyrim::Core
     };
 
     // observedYaw: the camera's world yaw this frame before we change anything; any difference from what
-    // we wrote last frame is the player's look input. heading: while skidding or parked, where the skier
-    // will be heading once it's over (SkiStep::nextHeading); the camera follows that instead of the skis
-    // or the stop. Returns the camera yaw to set.
+    // we wrote last frame is the player's look input. Returns the camera yaw to set.
     float UpdateCameraFollow(CameraFollowState& state, const CameraFollowSettings& settings, float deltaSeconds,
-        float observedYaw, float skiYaw, Vec2 velocity, std::optional<float> heading = std::nullopt) noexcept;
+        float observedYaw, Vec2 velocity) noexcept;
 }

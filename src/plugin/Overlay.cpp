@@ -141,7 +141,7 @@ namespace SkiingInSkyrim::Overlay
         line(kText, speed > 0.2F ? fmt::format("slip {:+.0f} deg   grip {:.1f} m/s2", data.slipDegrees, data.gripLimit) :
                                    fmt::format("slip -   grip {:.1f} m/s2", data.gripLimit));
         const char* hold = !data.grounded ? "airborne" : data.skidding ? "skidding" : "holding";
-        line(data.skidding ? kSkid : kGrip, data.parked ? fmt::format("{}   side-slip mode", hold) : hold);
+        line(data.skidding ? kSkid : kGrip, data.parked ? fmt::format("{}   stopped", hold) : hold);
         line(kFaint, "white: skis  blue: fall line  arrow: travel");
     }
 }

@@ -194,7 +194,7 @@ namespace SkiingInSkyrim::Telemetry
                     smoothed.fallLineOffsetDegrees,
                     ski.ski.velocity.x, ski.ski.velocity.y, Core::Length(ski.ski.velocity), ski.observedSpeed,
                     ski.step.blocked, ski.step.edgeDegrees, ski.step.pivotDegrees,
-                    raw.skid ? "(skid)" : ski.step.parked ? "(side-slip)" : "",
+                    raw.skid ? "(skid)" : ski.step.parked ? "(stopped)" : "",
                     ski.step.slipDegrees, ski.step.gripLimit, ski.step.skidding, raw.triggerLeft, raw.triggerRight,
                     raw.mouseLeft ? 'L' : '-', raw.mouseRight ? 'R' : '-',
                     camera.status, camera.yawDegrees, camera.lookDegrees,

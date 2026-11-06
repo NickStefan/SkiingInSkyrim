@@ -50,19 +50,14 @@ namespace SkiingInSkyrim::Settings
                 &S::pivotBuildSeconds, 0.05F, 2.0F, "%.2f" },
             { "PivotReturnSeconds", "Skid return time", "Seconds for the skis to untwist after releasing skid.",
                 &S::pivotReturnSeconds, 0.05F, 2.0F, "%.2f" },
-            { "ParkSpeed", "Stop speed", "m/s. Slowing below this while holding skid counts as stopped: the skis "
-                                         "settle across the hill and releasing side-slips before turning downhill.",
+            { "ParkSpeed", "Stop speed", "m/s. Slowing below this while holding skid counts as stopped: you're held "
+                                         "there, and the skis stay where they are when you let go.",
                 &S::parkSpeed, 0.0F, 2.0F, "%.2f" },
-            { "SideslipSeconds", "Side-slip time", "Seconds you side-slip after releasing from a stop, once no edge is "
-                                                   "held, before the skis turn downhill. While side-slipping the "
-                                                   "trigger feathers the slip: none slides, full holds.",
-                &S::sideslipSeconds, 0.0F, 5.0F, "%.2f" },
-            { "SideslipTurnSeconds", "Side-slip turn time", "Seconds for the skis to turn from across the hill to "
-                                                            "pointing downhill.",
-                &S::sideslipTurnSeconds, 0.1F, 3.0F, "%.2f" },
-            { "SideslipSwitchSeconds", "Side-slip switch time", "Seconds for the other trigger to swing the skis "
-                                                                "through the fall line to face across the other way.",
-                &S::sideslipSwitchSeconds, 0.1F, 2.0F, "%.2f" },
+            { "SteerDegreesPerSecond", "Steering rate", "Degrees per second the skis turn toward where the stick (or "
+                                                        "W/A/S/D) aims, at a full push.",
+                &S::steerDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
+            { "AimDeadzone", "Stick deadzone", "Fraction of the stick's travel, from the centre, that does nothing.",
+                &S::aimDeadzone, 0.0F, 0.6F, "%.2f" },
             { "GroundHugSeconds", "Ground hug time", "Seconds off the ground over a crest (not a jump) during which "
                                                      "you're held to the slope; longer absorbs bigger crests, 0 is off.",
                 &S::groundHugSeconds, 0.0F, 1.0F, "%.2f" },
@@ -71,10 +66,6 @@ namespace SkiingInSkyrim::Settings
             { "GroundHugMaxDropSpeed", "Ground hug max drop", "m/s. The pull can't take you down faster than this "
                                                               "beyond following the slope, so you don't slam back onto it.",
                 &S::groundHugMaxDropSpeed, 0.0F, 10.0F, "%.1f" },
-            { "StepTurnDegreesPerSecond", "Step turn rate", "Degrees per second the left stick or A/D turn you while "
-                                                            "nearly stopped (side-slipping on a slope, a firm push "
-                                                            "instead turns you downhill that way).",
-                &S::stepTurnDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
             { "BlockedRatio", "Blocked ratio", "If the engine delivers less than this fraction of our speed, give way.",
                 &S::blockedRatio, 0.3F, 0.95F, "%.2f" },
             { "BlockedBlend", "Blocked blend", "Per-frame blend toward the delivered speed while blocked.", &S::blockedBlend,

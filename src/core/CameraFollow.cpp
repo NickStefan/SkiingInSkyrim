@@ -29,7 +29,7 @@ namespace SkiingInSkyrim::Core
     }
 
     float UpdateCameraFollow(CameraFollowState& state, const CameraFollowSettings& settings, float deltaSeconds,
-        float observedYaw, float skiYaw, Vec2 velocity, std::optional<float> heading) noexcept
+        float observedYaw, Vec2 velocity) noexcept
     {
         const float dt = std::max(0.0F, deltaSeconds);
         if (!state.started) {
@@ -58,26 +58,18 @@ namespace SkiingInSkyrim::Core
             state.travel.y += (velocity.y / speed - state.travel.y) * blend;
         }
 
-        float reference = skiYaw;
-        if (heading) {
-            reference = *heading;
-        } else {
-            const float span = settings.travelFullSpeed - settings.travelMinSpeed;
-            const float travelWeight = span > 0.0F ?
-                                           std::clamp((speed - settings.travelMinSpeed) / span, 0.0F, 1.0F) :
+        const float span = settings.travelFullSpeed - settings.travelMinSpeed;
+        const float follow = span > 0.0F ? std::clamp((speed - settings.travelMinSpeed) / span, 0.0F, 1.0F) :
                                            (speed >= settings.travelMinSpeed ? 1.0F : 0.0F);
-            if (travelWeight > 0.0F && Length(state.travel) > 1e-3F) {
-                reference += travelWeight * WrapSigned(std::atan2(state.travel.x, state.travel.y) - skiYaw);
-            }
+        if (follow > 0.0F && Length(state.travel) > 1e-3F) {
+            // Beyond the lazy zone the camera follows at the normal rate; within it, only slowly.
+            const float offset = WrapSigned(std::atan2(state.travel.x, state.travel.y) - state.yaw);
+            const float zone = std::max(0.0F, settings.lazyZoneDegrees) * kRadians;
+            const float inside = std::clamp(offset, -zone, zone);
+            const float outside = offset - inside;
+            state.yaw = WrapPositive(state.yaw + follow * (outside * Smoothing(dt, settings.followSeconds) +
+                                                              inside * Smoothing(dt, settings.recenterSeconds)));
         }
-
-        // Beyond the lazy zone the camera follows at the normal rate; within it, only slowly.
-        const float offset = WrapSigned(reference - state.yaw);
-        const float zone = std::max(0.0F, settings.lazyZoneDegrees) * kRadians;
-        const float inside = std::clamp(offset, -zone, zone);
-        const float outside = offset - inside;
-        state.yaw = WrapPositive(state.yaw + outside * Smoothing(dt, settings.followSeconds) +
-                                 inside * Smoothing(dt, settings.recenterSeconds));
 
         state.lastWritten = WrapPositive(state.yaw + state.look);
         return state.lastWritten;

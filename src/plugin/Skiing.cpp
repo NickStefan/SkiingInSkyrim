@@ -17,7 +17,7 @@ namespace SkiingInSkyrim::Skiing
 
         // A stick that hasn't reported for this long is ignored.
         constexpr float kStaleStickSeconds = 0.5F;
-        constexpr float kStickDeadzone = 0.05F;
+        constexpr float kStickSmoothingSeconds = 0.08F;
         constexpr float kTriggerDeadzone = 0.02F;
 
         struct Command
@@ -81,8 +81,12 @@ namespace SkiingInSkyrim::Skiing
         bool g_edgeFromButtons = true;
         bool g_skidFromToggle = false;
 
-        // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Step turn: left stick X or A/D.
-        void ReadControls(Core::SkiInput& ski)
+        // The left stick, smoothed so thumb twitches don't become ski twitches.
+        Core::Vec2 g_stick{};
+
+        // Edge: triggers (analog) or mouse buttons. Skid: its bindings. Aim: the left stick or W/A/S/D,
+        // relative to viewYaw (where the camera looks).
+        void ReadControls(Core::SkiInput& ski, float viewYaw, float delta, const Core::SkiSettings& physics)
         {
             const auto  input = Input::Get();
             const float triggers = input.triggerRight - input.triggerLeft;
@@ -105,11 +109,19 @@ namespace SkiingInSkyrim::Skiing
             }
             ski.skidHeld = input.skid && !g_skidFromToggle;
 
-            const bool stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
-            if (stickFresh && std::fabs(input.stickX) > kStickDeadzone) {
-                ski.stepTurn = input.stickX;
+            const bool       stickFresh = input.stickAge >= 0.0F && input.stickAge < kStaleStickSeconds;
+            const Core::Vec2 stick = stickFresh ? Core::Vec2{ input.stickX, input.stickY } : Core::Vec2{};
+            const float      blend = 1.0F - std::exp(-std::max(0.0F, delta) / kStickSmoothingSeconds);
+            g_stick = { g_stick.x + (stick.x - g_stick.x) * blend, g_stick.y + (stick.y - g_stick.y) * blend };
+
+            const Core::Vec2 keys{ (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F),
+                (input.forward ? 1.0F : 0.0F) - (input.back ? 1.0F : 0.0F) };
+            if (keys.x != 0.0F || keys.y != 0.0F) {
+                ski.aimYaw = viewYaw + std::atan2(keys.x, keys.y);
+                ski.aimStrength = 1.0F;
             } else {
-                ski.stepTurn = (input.right ? 1.0F : 0.0F) - (input.left ? 1.0F : 0.0F);
+                ski.aimYaw = viewYaw + std::atan2(g_stick.x, g_stick.y);
+                ski.aimStrength = Core::AimStrength(g_stick.x, g_stick.y, physics.aimDeadzone);
             }
         }
 
@@ -177,6 +189,7 @@ namespace SkiingInSkyrim::Skiing
         if (starting) {
             g_ground.Reset();
             g_skidFromToggle = true;
+            g_stick = {};
         }
         const auto& ground = g_ground.Update({
             .supported = controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported,
@@ -201,15 +214,15 @@ namespace SkiingInSkyrim::Skiing
         input.hasNormal = ground.hasNormal;
         input.normal = ground.normal;
         input.yaw = player->data.angle.z;
-        ReadControls(input);
+        const auto physics = Settings::Physics();
+        Camera::Observe(player);
+        ReadControls(input, Camera::ViewYaw(player), delta, physics);
         input.hasObserved = !starting;
         input.observed = observed;
-        const auto physics = Settings::Physics();
         const auto step = Core::StepSki(g_debug.ski, input, physics);
 
-        Camera::Observe(player);
         SetYaw(player, step.yaw);
-        Camera::Apply(player, delta, step.yaw, step.velocity, step.nextHeading);
+        Camera::Apply(player, delta, step.velocity);
         SetCommand({ true, step.velocity });
         g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);
         SetOverlay({

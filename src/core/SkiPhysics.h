@@ -2,7 +2,6 @@
 
 #include "core/Vec3.h"
 
-#include <optional>
 
 namespace SkiingInSkyrim::Core
 {
@@ -57,20 +56,19 @@ namespace SkiingInSkyrim::Core
         float pivotBuildSeconds{ 0.3F };
         float pivotReturnSeconds{ 0.4F };
         // While moving, skid never twists the skis more than 90 degrees from the direction of travel.
-        //
-        // Side-slip: coming to a stop (below parkSpeed, m/s) while holding skid parks you, and the skis
-        // settle across the hill. After release the skid's grip goes and you side-slip on whatever edge you
-        // hold; once no edge has been held for sideslipSeconds, the skis turn to point downhill over
-        // sideslipTurnSeconds (for a full pivotMaxDegrees).
-        // While side-slipping, the edge's grip is measured against the slope: no edge slides on flat skis,
-        // full edge just holds you, and the trigger travel in between feathers the slip on any slope.
-        // You stop facing across the hill on the side of the held trigger (else the nearer side); the
-        // other trigger swings the skis through the fall line to the other side over sideslipSwitchSeconds.
-        // The stick ends the side-slip early, turning the tips downhill and up to 45 degrees that way.
+        // Coming to a stop (below parkSpeed, m/s) while holding skid holds you there, and the skis stay
+        // where they ended up when you let go.
         float parkSpeed{ 0.3F };
-        float sideslipSeconds{ 1.5F };
-        float sideslipTurnSeconds{ 0.5F };
-        float sideslipSwitchSeconds{ 0.5F };
+
+        // Steering: the stick aims the skis (relative to the camera), turning them toward the aim at up to
+        // steerDegreesPerSecond with a full push; pushes inside aimDeadzone (fraction of full) do nothing.
+        // Steering harder than the skis can carve skids them round, scrubbing speed.
+        float steerDegreesPerSecond{ 120.0F };
+        float aimDeadzone{ 0.2F };
+
+        // Side-slipping (sliding slowly and mostly sideways), the edge's grip is measured against the slope:
+        // no edge slides on flat skis, full edge holds you, and the trigger travel in between feathers the
+        // slip on any slope.
 
         // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
         // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra
@@ -78,9 +76,6 @@ namespace SkiingInSkyrim::Core
         float groundHugSeconds{ 0.35F };
         float groundHugGravity{ 35.0F };
         float groundHugMaxDropSpeed{ 2.0F };  // m/s the pull may add beyond following the slope
-        // Turning on the spot (left stick or A/D), only when nearly stopped.
-        float stepTurnDegreesPerSecond{ 90.0F };
-
         // If the engine delivers less than this fraction of what we asked for, something is in the way.
         float blockedRatio{ 0.75F };
         // Per-frame blend toward the delivered velocity while blocked.
@@ -98,7 +93,8 @@ namespace SkiingInSkyrim::Core
         float edgeTarget{ 0.0F };          // -1 left edge .. +1 right edge, fraction of max edge
         bool  edgeFromButtons{ false };    // digital input: ramp in, release slowly
         bool  skidHeld{ false };
-        float stepTurn{ 0.0F };            // -1 left .. +1 right, used only when nearly stopped
+        float aimYaw{ 0.0F };              // where the stick aims the skis, radians
+        float aimStrength{ 0.0F };         // 0..1, how firmly (see AimStrength)
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention
     };
@@ -110,12 +106,7 @@ namespace SkiingInSkyrim::Core
         float pivotAngle{ 0.0F };     // radians of twist currently applied, >= 0
         float pivotSide{ 1.0F };      // +1 right, -1 left
         float lastEdgeSide{ 1.0F };   // pivot direction with flat skis on flat ground
-        bool  parked{ false };        // stopped while skidding; kept until the skis have come round
-        float parkHeading{ 0.0F };    // untwisted heading when parked, the way back on flat ground
-        float parkSide{ 1.0F };       // +1 parked facing right of the fall line (right edges uphill), -1 left
-        bool  switching{ false };     // swinging through the fall line to the other side
-        float exitOffset{ 0.0F };     // radians right of the fall line the skis turn to when the side-slip ends
-        float sideslipTime{ 0.0F };   // seconds released while parked with no edge
+        bool  parked{ false };        // stopped while holding skid
         float skidHold{ 0.0F };       // 0..1, how far into the skid stance (builds over pivotBuildSeconds)
         float commandedSpeed{ 0.0F };
     };
@@ -130,14 +121,15 @@ namespace SkiingInSkyrim::Core
         float slipDegrees{ 0.0F };     // signed angle from the ski to the velocity, positive = sliding right
         float gripLimit{ 0.0F };       // m/s^2 of sideways force the edge can give
         bool  skidding{ false };       // sideways motion exceeded the grip limit
-        bool  parked{ false };         // releasing skid now side-slips instead of untwisting straight away
-        // While skidding or parked: where the skis will point once the skid is over (radians). Positive
-        // pivotDegrees is the skis turned right of it.
-        std::optional<float> nextHeading;
+        bool  parked{ false };         // stopped while holding skid
     };
 
     // Arc radius of a carving ski at the given edge angle, or infinity when flat.
     [[nodiscard]] float CarveRadius(float edgeRadians, const SkiSettings& settings) noexcept;
+
+    // How firmly a stick pushed to (x, y) steers, 0..1: nothing inside the deadzone, then rising gently so
+    // small pushes make fine corrections.
+    [[nodiscard]] float AimStrength(float stickX, float stickY, float deadzone) noexcept;
 
     SkiStep StepSki(SkiState& state, const SkiInput& input, const SkiSettings& settings = {}) noexcept;
 

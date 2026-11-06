@@ -143,18 +143,17 @@ namespace SkiingInSkyrim::Menu
             ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
                                         "an arc that tightens with more edge. Attacks, blocking and readying weapons "
                                         "are off while skiing.");
+            ImGuiMCP::TextWrapped("%s", "Steer with the left stick or W/A/S/D: the skis turn toward where you push, "
+                                        "relative to the camera, more firmly the further you push. Leave it centred "
+                                        "and the skis carve wherever the edges take them. Steering harder than they "
+                                        "can carve skids them round and scrubs speed.");
             ImGuiMCP::TextWrapped("%s", "Hold skid to twist the skis sideways and dig the edges in: a hockey stop. "
                                         "They twist toward the edge you're holding, or into the hill with no edge, "
                                         "further the longer you hold. Keep holding and you stay put on the hill. "
-                                        "Release before you've stopped and they untwist straight away. Stop "
-                                        "completely and the skis settle across the hill, facing the side of the "
-                                        "trigger you hold. Release and you side-slip, with that trigger setting how "
-                                        "much (tap skid to stop again); the other trigger swings the skis through the "
-                                        "fall line to face the other way. After a while with no edge, or when you "
-                                        "push the left stick, the skis turn downhill (angled the way you push). When "
-                                        "nearly stopped, the left stick or A/D turn you on the spot. W and S do "
-                                        "nothing yet. Telemetry is written to the log "
-                                        "while enabled.");
+                                        "Release before you've stopped and they untwist; stop completely and they "
+                                        "stay where they are. Sliding slowly sideways, the uphill edge feathers the "
+                                        "slip: none slides, full holds. Telemetry is written to the log while "
+                                        "enabled.");
 
             ImGuiMCP::SeparatorText("Compatibility");
             RenderTdm();
