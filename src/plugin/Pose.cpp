@@ -271,8 +271,6 @@ namespace SkiingInSkyrim::Pose
                 Set(bone(kHand[side]), character, foreTurn * hand.rotate, nullptr, w);
             }
 
-            RE::NiUpdateData update{};
-            bone(kCom).Update(update);
             return stance;
         }
 
