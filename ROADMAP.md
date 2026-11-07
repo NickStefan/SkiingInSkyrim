@@ -40,9 +40,19 @@ sound conditions can key off it.
       longer flats need a dedicated stride/double-pole move.
 - [ ] Keyboard and mouse: mouse steering lets the skis self-align back toward travel as soon as the mouse stops,
       which fights traverses and switchbacks; a held mouse heading (skis stay where the mouse left them) may fix it.
+- [ ] Auto-edge mode (keyboard-only skiing with WASD): the edge follows the steering intent instead of the mouse
+      buttons. Turning edges toward the turn (more with a bigger aim offset and more speed), traversing across the
+      hill holds a light uphill edge so the line doesn't slide away, pointing downhill or tucking (W) runs flat, S
+      brakes. Simpler than the controller's manual edging (no falling leaf or sudden hard edge), but should make
+      cat tracks and switchbacks workable without analog triggers.
 - [ ] Detect snowy ground (and deep snow from snow-deformation mods) to switch powder on and off automatically.
       Weigh against compatibility.
 - [ ] Hops by pumping the stick (unweighting).
 - [ ] Revisit fall damage if landings still feel punishing.
 - [ ] Camera comfort: options that reduce motion sickness on long runs.
 - [ ] NPC skiers (the plugin is player-only for now).
+
+## Last
+
+- [ ] Ski-run quests: start at marker A, pass markers B, C, ... in order; succeed at the last marker, fail if the
+      skis are taken off (Papyrus OnObjectUnequipped / item removed) before reaching the next one.
