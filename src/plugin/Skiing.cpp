@@ -4,7 +4,7 @@
 #include "plugin/Havok.h"
 #include "plugin/Input.h"
 #include "plugin/Settings.h"
-#include "plugin/SkiingState.h"
+#include "plugin/Skis.h"
 #include "plugin/Tdm.h"
 
 namespace SkiingInSkyrim::Skiing
@@ -57,10 +57,14 @@ namespace SkiingInSkyrim::Skiing
             g_command = command;
         }
 
-        const char* InactiveReason(RE::PlayerCharacter* player, RE::bhkCharacterController* controller)
+        const char* InactiveReason(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
+            const RE::TESObjectARMO* skis)
         {
-            if (!IsSkiingEnabled()) {
-                return "off";
+            if (!Settings::ModEnabled()) {
+                return "mod disabled";
+            }
+            if (!skis) {
+                return "no skis";
             }
             if (!controller) {
                 return "no character controller";
@@ -89,7 +93,6 @@ namespace SkiingInSkyrim::Skiing
 
         // Whichever of triggers or mouse buttons last asked for edge decides how the edge releases.
         bool g_edgeFromButtons = true;
-        bool g_skidFromToggle = false;
 
         // The steering stick, smoothed so thumb twitches don't become ski twitches.
         Core::Vec2 g_stick{};
@@ -122,13 +125,7 @@ namespace SkiingInSkyrim::Skiing
             }
             ski.edgeTarget = edge;
             ski.edgeFromButtons = g_edgeFromButtons;
-
-            // Skid held as skiing starts is usually part of the toggle chord (it can share a button), so it
-            // only counts once released and pressed again.
-            if (!input.skid) {
-                g_skidFromToggle = false;
-            }
-            ski.skidHeld = input.skid && !g_skidFromToggle;
+            ski.skidHeld = input.skid;
 
             const auto       left = FreshStick(input.stickX, input.stickY, input.stickAge);
             const bool       rightSteers = Settings::AimWithRightStick();
@@ -336,7 +333,8 @@ namespace SkiingInSkyrim::Skiing
     void Update(RE::PlayerCharacter* player, float delta)
     {
         auto* controller = player->GetCharController();
-        if (const char* reason = InactiveReason(player, controller)) {
+        auto* skis = Skis::Worn(player);
+        if (const char* reason = InactiveReason(player, controller, skis)) {
             if (g_debug.active) {
                 spdlog::info("skiing inactive: {}", reason);
             }
@@ -345,6 +343,7 @@ namespace SkiingInSkyrim::Skiing
             SetCommand({});
             SetOverlay({ .active = false, .inactiveReason = reason });
             Camera::Reset();
+            Skis::Hide();
             return;
         }
 
@@ -357,7 +356,6 @@ namespace SkiingInSkyrim::Skiing
             g_height.lastZ.reset();
             g_height.lastBodyZ.reset();
             g_ground.Reset();
-            g_skidFromToggle = true;
             g_stick = {};
             g_mouseTurn = 0.0F;
             Input::TakeMouseX();
@@ -396,6 +394,13 @@ namespace SkiingInSkyrim::Skiing
         g_sinceStride = step.skated ? 0.0F : g_sinceStride + delta;
 
         SetYaw(player, step.yaw);
+        Skis::Show(player, skis,
+            {
+                .yaw = step.yaw,
+                .edgeRadians = step.edgeDegrees * std::numbers::pi_v<float> / 180.0F,
+                .groundNormal = grounded && ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F },
+            },
+            delta);
         Camera::Apply(player, delta, step.velocity, lookTurn);
         SetCommand({ true, step.velocity });
         g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);

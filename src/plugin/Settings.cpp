@@ -144,7 +144,6 @@ namespace SkiingInSkyrim::Settings
         };
 
         const BindingInfo kBindings[] = {
-            { Binding::Toggle, "ToggleKey", "Toggle skiing mode", {} },
             { Binding::SkidKeyboard, "SkidKey", "Skid (keyboard/mouse)", { { RE::INPUT_DEVICE::kKeyboard, kLeftShift }, {} } },
             { Binding::SkidGamepad, "SkidButton", "Skid (gamepad)", { { RE::INPUT_DEVICE::kGamepad, kGamepadX }, {} } },
         };
@@ -157,9 +156,8 @@ namespace SkiingInSkyrim::Settings
                 return device == RE::INPUT_DEVICE::kKeyboard || device == RE::INPUT_DEVICE::kMouse;
             case Binding::SkidGamepad:
                 return device == RE::INPUT_DEVICE::kGamepad;
-            default:
-                return device >= RE::INPUT_DEVICE::kKeyboard && device <= RE::INPUT_DEVICE::kGamepad;
             }
+            return false;
         }
 
         struct State
@@ -168,6 +166,7 @@ namespace SkiingInSkyrim::Settings
             Core::CameraFollowSettings              camera;
             std::array<Hotkey, kBindingCount>       bindings;
             std::array<std::string, kBindingCount>  bindingNames;
+            bool                                    modEnabled{ true };
             bool                                    showOverlay{ false };
             bool                                    aimWithRightStick{ false };
             float                                   mouseSteerSensitivity{ 0.1F };
@@ -237,6 +236,9 @@ namespace SkiingInSkyrim::Settings
             text << file.rdbuf();
             const auto ini = Core::Ini::Parse(text.str());
 
+            if (const auto value = ini.GetInt("General", "ModEnabled")) {
+                loaded.modEnabled = *value != 0;
+            }
             for (std::size_t i = 0; i < kBindingCount; ++i) {
                 const auto& info = kBindings[i];
                 if (const auto key = ReadButton(ini, info.binding, info.key)) {
@@ -297,6 +299,9 @@ namespace SkiingInSkyrim::Settings
         }
         std::string text;
         text += "; Skiing in Skyrim settings. Written by the in-game menu; edit there or here.\n\n";
+        text += "[General]\n";
+        text += "; Wearing skis turns skiing on (1 on, 0 off: the mod does nothing).\n";
+        text += fmt::format("ModEnabled = {}\n\n", state.modEnabled ? 1 : 0);
         text += "[Controls]\n";
         text += "; Buttons: device (0 keyboard, 1 mouse, 2 gamepad, -1 unbound) and button id. A modifier, if bound,\n";
         text += "; must be held when the button is pressed.\n";
@@ -382,6 +387,24 @@ namespace SkiingInSkyrim::Settings
         std::scoped_lock lock(g_lock);
         g_state.bindings[static_cast<std::size_t>(binding)] = hotkey;
         g_state.bindingNames[static_cast<std::size_t>(binding)] = std::move(name);
+    }
+
+    bool ModEnabled()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.modEnabled;
+    }
+
+    void SetModEnabled(bool enabled)
+    {
+        {
+            std::scoped_lock lock(g_lock);
+            if (g_state.modEnabled == enabled) {
+                return;
+            }
+            g_state.modEnabled = enabled;
+        }
+        spdlog::info("mod {}", enabled ? "enabled" : "disabled");
     }
 
     bool ShowOverlay()

@@ -2,7 +2,7 @@
 #include "plugin/Input.h"
 #include "plugin/Menu.h"
 #include "plugin/Settings.h"
-#include "plugin/SkiingState.h"
+#include "plugin/Skis.h"
 #include "plugin/Tdm.h"
 #include "plugin/Telemetry.h"
 
@@ -31,15 +31,19 @@ namespace
             break;
         case SKSE::MessagingInterface::kDataLoaded:
             SkiingInSkyrim::Settings::Load();
+            SkiingInSkyrim::Skis::Register();
             if (SkiingInSkyrim::Menu::Register()) {
                 spdlog::info("SKSE Menu Framework page registered");
             } else {
-                spdlog::warn("SKSE Menu Framework not found; skiing mode cannot be toggled");
+                spdlog::warn("SKSE Menu Framework not found; settings are only in the INI");
             }
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
+            SkiingInSkyrim::Skis::Reset();
+            break;
+        case SKSE::MessagingInterface::kPostLoadGame:
         case SKSE::MessagingInterface::kNewGame:
-            SkiingInSkyrim::SetSkiingEnabled(false, "game load");
+            SkiingInSkyrim::Skis::Refresh();
             break;
         default:
             break;

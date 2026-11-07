@@ -30,7 +30,6 @@ namespace SkiingInSkyrim::Settings
 
     enum class Binding
     {
-        Toggle,
         SkidKeyboard,  // keyboard or mouse
         SkidGamepad,
     };
@@ -81,6 +80,10 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] std::string BindingName(Binding binding);  // "LB + X", or empty when unbound
     // Looks up display names through the game's input manager.
     void                      SetBinding(Binding binding, Hotkey hotkey);
+
+    // Master switch: off, wearing skis does nothing.
+    [[nodiscard]] bool ModEnabled();
+    void               SetModEnabled(bool enabled);
 
     [[nodiscard]] bool ShowOverlay();
     void               SetShowOverlay(bool show);

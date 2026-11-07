@@ -1,9 +1,9 @@
 #pragma once
 
-#include <string_view>
-
 namespace SkiingInSkyrim
 {
-    [[nodiscard]] bool IsSkiingEnabled() noexcept;
-    void SetSkiingEnabled(bool enabled, std::string_view source);
+    // The mod is enabled and the player wears skis. Any thread.
+    [[nodiscard]] bool IsSkiingEnabled();
+    [[nodiscard]] bool AreSkisWorn() noexcept;
+    void SetSkisWorn(bool worn) noexcept;
 }

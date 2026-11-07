@@ -1,23 +1,19 @@
 #include "plugin/SkiingState.h"
 
+#include "plugin/Settings.h"
+
 #include <atomic>
 
 namespace SkiingInSkyrim
 {
     namespace
     {
-        std::atomic<bool> g_enabled{ false };
+        std::atomic<bool> g_skisWorn{ false };
     }
 
-    bool IsSkiingEnabled() noexcept
-    {
-        return g_enabled.load(std::memory_order_relaxed);
-    }
+    bool IsSkiingEnabled() { return Settings::ModEnabled() && AreSkisWorn(); }
 
-    void SetSkiingEnabled(bool enabled, std::string_view source)
-    {
-        if (g_enabled.exchange(enabled, std::memory_order_relaxed) != enabled) {
-            spdlog::info("skiing mode {} ({})", enabled ? "enabled" : "disabled", source);
-        }
-    }
+    bool AreSkisWorn() noexcept { return g_skisWorn.load(std::memory_order_relaxed); }
+
+    void SetSkisWorn(bool worn) noexcept { g_skisWorn.store(worn, std::memory_order_relaxed); }
 }

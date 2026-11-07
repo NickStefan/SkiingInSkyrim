@@ -15,7 +15,7 @@ namespace SkiingInSkyrim::Skiing
     struct Debug
     {
         bool                 active{ false };
-        const char*          inactiveReason{ "off" };
+        const char*          inactiveReason{ "no skis" };
         Core::GroundEstimate ground;
         Core::SkiState       ski;
         Core::SkiStep        step;
@@ -32,7 +32,7 @@ namespace SkiingInSkyrim::Skiing
     struct OverlayData
     {
         bool        active{ false };
-        const char* inactiveReason{ "off" };
+        const char* inactiveReason{ "no skis" };
         bool        grounded{ true };
         float       yaw{ 0.0F };
         Core::Vec2  velocity{};

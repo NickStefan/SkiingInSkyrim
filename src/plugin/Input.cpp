@@ -2,7 +2,6 @@
 
 #include "plugin/Settings.h"
 #include "plugin/Skiing.h"
-#include "plugin/SkiingState.h"
 
 #include <set>
 
@@ -111,12 +110,6 @@ namespace SkiingInSkyrim::Input
             return hotkey.Bound() && Held(hotkey.key, now) && ModifierHeld(hotkey, now);
         }
 
-        bool CanToggle()
-        {
-            auto* ui = RE::UI::GetSingleton();
-            return ui && !ui->GameIsPaused() && !ui->IsMenuOpen(RE::Console::MENU_NAME);
-        }
-
         void Track(const RE::ButtonEvent& button)
         {
             g_state.buttons[ButtonKey(button.GetDevice(), button.GetIDCode())].Set(button);
@@ -125,11 +118,6 @@ namespace SkiingInSkyrim::Input
         void OnButton(const RE::ButtonEvent& button)
         {
             Track(button);
-            const auto toggle = Settings::GetBinding(Binding::Toggle);
-            if (button.IsDown() && g_capturing < 0 && toggle.key.Is(button.GetDevice(), button.GetIDCode()) &&
-                ModifierHeld(toggle, Clock::now()) && CanToggle()) {
-                SetSkiingEnabled(!IsSkiingEnabled(), "hotkey");
-            }
             if (button.GetDevice() != RE::INPUT_DEVICE::kKeyboard) {
                 return;
             }
@@ -349,20 +337,7 @@ namespace SkiingInSkyrim::Input
             return false;
         }
 
-        // Anything still held on the same device becomes the modifier (toggle only).
-        Settings::Hotkey hotkey{ { device, id }, {} };
-        if (*binding == Binding::Toggle) {
-            const auto now = Clock::now();
-            for (const auto& [key, state] : g_state.buttons) {
-                const auto heldDevice = static_cast<RE::INPUT_DEVICE>(key >> 32);
-                const auto heldId = static_cast<std::uint32_t>(key & 0xFFFFFFFF);
-                if (heldDevice == device && heldId != id && Held(state, now)) {
-                    hotkey.modifier = { heldDevice, heldId };
-                    break;
-                }
-            }
-        }
-        Settings::SetBinding(*binding, hotkey);
+        Settings::SetBinding(*binding, { { device, id }, {} });
         Settings::Save();
         CancelCapture();
         return true;

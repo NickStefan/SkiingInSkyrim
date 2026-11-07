@@ -104,26 +104,28 @@ namespace SkiingInSkyrim::Menu
         void RenderBindings()
         {
             using Settings::Binding;
-            RenderBinding(Binding::Toggle, "Toggle skiing",
-                "hold a modifier if you want one, then press and release a button (Esc cancels)");
             RenderBinding(Binding::SkidKeyboard, "Skid (keyboard/mouse)", "press a key or mouse button (Esc cancels)");
             RenderBinding(Binding::SkidGamepad, "Skid (gamepad)", "press a gamepad button (Esc cancels)");
-
-            const auto toggle = Settings::GetBinding(Binding::Toggle);
-            for (const auto skid : { Binding::SkidKeyboard, Binding::SkidGamepad }) {
-                const auto binding = Settings::GetBinding(skid);
-                if (toggle.Bound() && binding.Bound() && toggle.key == binding.key && !toggle.modifier.Bound()) {
-                    Colored(kWarn, "The toggle is the same button as skid: pressing skid will turn skiing off. "
-                                   "Give the toggle a modifier (hold e.g. LB while setting it) or another button.");
-                }
-            }
         }
 
         void __stdcall RenderSettings()
         {
-            bool enabled = IsSkiingEnabled();
-            if (ImGuiMCP::Checkbox("Skiing mode", &enabled)) {
-                SetSkiingEnabled(enabled, "menu");
+            bool enabled = Settings::ModEnabled();
+            if (ImGuiMCP::Checkbox("Mod enabled", &enabled)) {
+                Settings::SetModEnabled(enabled);
+                Settings::Save();
+            }
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", "Off, wearing skis does nothing: handy for telling whether a problem "
+                                           "comes from this mod.");
+            }
+            ImGuiMCP::SameLine();
+            if (!enabled) {
+                ImGuiMCP::TextDisabled("%s", "(skis do nothing)");
+            } else if (AreSkisWorn()) {
+                Colored(kGood, "Skis on: skiing");
+            } else {
+                ImGuiMCP::TextDisabled("%s", "Put on skis to ski (craft them at a forge)");
             }
             RenderBindings();
             bool rightStick = Settings::AimWithRightStick();
@@ -170,7 +172,9 @@ namespace SkiingInSkyrim::Menu
                 ImGuiMCP::SetTooltip("%s", "Third person only. The camera swings round behind where you're going; the "
                                            "right stick or mouse looks around and it eases back.");
             }
-            ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
+            ImGuiMCP::TextWrapped("%s", "Wear skis (Wooden Skis: firewood and leather strips at a forge) to ski; "
+                                        "take them off to walk. "
+                                        "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
                                         "an arc that tightens with more edge. Attacks, blocking and readying weapons "
                                         "are off while skiing.");
             ImGuiMCP::TextWrapped("%s", "Steer with the left stick (or the right, if set above) or W/A/S/D: the skis "

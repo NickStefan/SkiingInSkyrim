@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build SkiingInSkyrim.dll with MSVC under Wine and assemble build/mod.
+"""Build SkiingInSkyrim.dll with MSVC under Wine and assemble build/mod (with SkiingInSkyrim.esp).
 
     python3 tools/build.py          build the plugin and assemble build/mod
     python3 tools/build.py test     build and run the src/core unit tests under Wine
@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fetch_toolchain as pins  # noqa: E402
+import make_plugin  # noqa: E402
 import wine_env  # noqa: E402
 
 ROOT = wine_env.ROOT
@@ -192,6 +193,7 @@ def package(dll, pdb):
     plugins.mkdir(parents=True)
     shutil.copy2(dll, plugins)
     shutil.copy2(pdb, plugins)
+    make_plugin.write(BUILD / 'mod' / make_plugin.NAME)
     print(f'{dll.name}: exports {", ".join(sorted(exported))}')
     print(f'{dll.name}: imports {", ".join(imported)}')
     print(f'Packaged {plugins.relative_to(ROOT)}')
