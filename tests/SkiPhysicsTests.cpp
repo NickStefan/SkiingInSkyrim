@@ -29,6 +29,7 @@ namespace
         bool  skid{ false };
         float aim{ 0.0F };     // steering strength, 0..1
         float aimYaw{ 0.0F };  // where the stick aims
+        float push{ 0.0F };    // push strength beyond aim (keys)
         bool  buttons{ false };
         bool  grounded{ true };
         float yawTurn{ 0.0F };  // direct turn this frame (mouse)
@@ -70,6 +71,7 @@ namespace
             input.skidHeld = controls.skid;
             input.aimStrength = controls.aim;
             input.aimYaw = controls.aimYaw;
+            input.pushStrength = controls.push;
             last = StepSki(state, input, settings);
             yaw = last.yaw;
             return last;
@@ -164,6 +166,26 @@ TEST_CASE("a clean carve follows the sidecut arc and keeps its speed")
     const float friction = 0.05F * 9.81F + skier.settings.dragPerSpeedSquared * 64.0F +
                            skier.settings.dragPerSpeedFourth * 4096.0F;
     CHECK(skier.Speed() > 8.0F - friction - 0.05F);
+}
+
+TEST_CASE("a carve reports the turn's sideways pull; a straight run reports none")
+{
+    Skier right;
+    right.Edged(0.6F).state.velocity = { 0.0F, 8.0F };
+    right.Run(0.5F, kFlat, { .edge = 0.6F });
+    const float radius = CarveRadius(0.6F * right.settings.maxEdgeDegrees * kDegrees, right.settings);
+    const float speed = right.Speed();
+    CHECK_NEAR(right.last.turnAcceleration, speed * speed / radius, 0.1F * speed * speed / radius);
+
+    Skier left;
+    left.Edged(-0.6F).state.velocity = { 0.0F, 8.0F };
+    left.Run(0.5F, kFlat, { .edge = -0.6F });
+    CHECK(left.last.turnAcceleration < 0.0F);
+
+    Skier straight;
+    straight.state.velocity = { 0.0F, 8.0F };
+    straight.Run(0.5F, SlopeDownY(15.0F));
+    CHECK_NEAR(straight.last.turnAcceleration, 0.0F, 1e-3F);
 }
 
 TEST_CASE("more edge carves a tighter arc")
@@ -739,6 +761,36 @@ TEST_CASE("pushing firmly the way the skis point tucks, and tucking goes faster"
     turning.state.velocity = { 0.0F, 10.0F };
     turning.Step(SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = kQuarterTurn });
     CHECK_NEAR(turning.last.tuck, 0.0F, 1e-6F);
+}
+
+TEST_CASE("a tuck holds through a steered turn and eases out when let go")
+{
+    Skier skier;
+    skier.Run(3.0F, SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = 0.0F });
+    CHECK_NEAR(skier.last.tuck, 1.0F, 1e-3F);
+
+    // Steering 45 degrees off the skis, as W+D does: still tucked.
+    for (int i = 0; i < 30; ++i) {
+        skier.Step(SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = skier.yaw + 45.0F * kDegrees });
+    }
+    CHECK_NEAR(skier.last.tuck, 1.0F, 1e-3F);
+
+    // Keys changing restart the aim's strength, but the push carries on: still tucked.
+    skier.Step(SlopeDownY(20.0F), { .aim = 0.0F, .aimYaw = skier.yaw, .push = 1.0F });
+    CHECK_NEAR(skier.last.tuck, 1.0F, 1e-3F);
+
+    // Let go: one frame later only partly out of the tuck, fully out after the ease.
+    skier.Step(SlopeDownY(20.0F));
+    CHECK(skier.last.tuck > 0.9F);
+    skier.Run(0.5F, SlopeDownY(20.0F));
+    CHECK_NEAR(skier.last.tuck, 0.0F, 1e-6F);
+
+    // Steering hard to the side leaves the tuck.
+    skier.Run(3.0F, SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = skier.yaw });
+    for (int i = 0; i < 60; ++i) {
+        skier.Step(SlopeDownY(20.0F), { .aim = 1.0F, .aimYaw = skier.yaw + kQuarterTurn });
+    }
+    CHECK_NEAR(skier.last.tuck, 0.0F, 1e-6F);
 }
 
 TEST_CASE("landing along a slope is soft whatever the drop; meeting it head on is a fall")

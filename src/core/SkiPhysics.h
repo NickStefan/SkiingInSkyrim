@@ -129,6 +129,9 @@ namespace SkiingInSkyrim::Core
         bool  skidHeld{ false };
         float aimYaw{ 0.0F };              // where the stick aims the skis, radians
         float aimStrength{ 0.0F };         // 0..1, how firmly (see AimStrength)
+        // 0..1, how firmly the player pushes whatever the direction, if more than aimStrength. Keys keep
+        // building it while held, even as which keys changes, where aimStrength starts over.
+        float pushStrength{ 0.0F };
         float yawTurn{ 0.0F };             // radians to turn the skis directly this frame (mouse steering)
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention
@@ -146,6 +149,7 @@ namespace SkiingInSkyrim::Core
         float lastEdgeTarget{ 0.0F }; // last frame's edge input, to see fresh trigger squeezes
         float lastSkateSide{ 0.0F };  // side of the last skating stride, 0 before the first
         bool  skateEdging{ false };   // a mouse-button stride is held: light edge, quick release
+        float tuck{ 0.0F };           // 0..1
         float commandedSpeed{ 0.0F };
     };
 
@@ -162,6 +166,7 @@ namespace SkiingInSkyrim::Core
         bool  parked{ false };         // stopped while holding skid
         float tuck{ 0.0F };            // 0..1
         float pump{ 0.0F };            // m/s^2 of forward push from carving
+        float turnAcceleration{ 0.0F };  // m/s^2 the path curves at, positive right; on the ground only
         bool  skated{ false };         // a skating stride this frame
     };
 

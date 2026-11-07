@@ -163,6 +163,16 @@ namespace SkiingInSkyrim::Menu
                 ImGuiMCP::SetTooltip("%s", "Writes every frame to the log while the character shakes up and down. "
                                            "Only for chasing jitter; leave off otherwise.");
             }
+            bool stance = Settings::StanceEnabled();
+            if (ImGuiMCP::Checkbox("Ski stance", &stance)) {
+                Settings::SetStanceEnabled(stance);
+                Settings::Save();
+            }
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", "Pose the body like a skier while skiing: knees bent, leaning forward, "
+                                           "arms out front, crouching into a tuck. Shape it under Tuning > Body. "
+                                           "Off, the game's own animation shows.");
+            }
             auto camera = Settings::Camera();
             if (ImGuiMCP::Checkbox("Camera follows direction of travel", &camera.enabled)) {
                 Settings::SetCamera(camera);
@@ -242,10 +252,26 @@ namespace SkiingInSkyrim::Menu
                 Settings::SetCamera(camera);
             }
 
+            ImGuiMCP::SeparatorText("Body");
+            auto stance = Settings::Stance();
+            bool stanceChanged = false;
+            for (const auto& field : Settings::StanceFields()) {
+                stanceChanged |= ImGuiMCP::SliderFloat(field.label, &(stance.*field.member), field.min, field.max,
+                    field.format);
+                finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
+                if (ImGuiMCP::IsItemHovered()) {
+                    ImGuiMCP::SetTooltip("%s", field.help);
+                }
+            }
+            if (stanceChanged) {
+                Settings::SetStance(stance);
+            }
+
             ImGuiMCP::Spacing();
             if (ImGuiMCP::Button("Reset to defaults")) {
                 Settings::SetPhysics({});
                 Settings::SetCamera({ .enabled = Settings::Camera().enabled });
+                Settings::SetStance({});
                 finished = true;
             }
             if (finished) {

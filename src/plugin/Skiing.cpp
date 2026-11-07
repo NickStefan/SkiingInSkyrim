@@ -3,6 +3,7 @@
 #include "plugin/Camera.h"
 #include "plugin/Havok.h"
 #include "plugin/Input.h"
+#include "plugin/Pose.h"
 #include "plugin/Settings.h"
 #include "plugin/Skis.h"
 #include "plugin/Tdm.h"
@@ -45,10 +46,23 @@ namespace SkiingInSkyrim::Skiing
         std::mutex  g_overlayLock;
         OverlayData g_overlay;
 
+        Body g_body;
+
+        // The path's curve, smoothed over this long so the body leans through a turn rather than twitching
+        // with every frame's correction.
+        constexpr float kTurnSmoothingSeconds = 0.2F;
+        float           g_turnAcceleration = 0.0F;
+
         void SetOverlay(const OverlayData& overlay)
         {
             std::scoped_lock lock(g_overlayLock);
             g_overlay = overlay;
+        }
+
+        void SetBody(const Body& body)
+        {
+            std::scoped_lock lock(g_overlayLock);
+            g_body = body;
         }
 
         void SetCommand(const Command& command)
@@ -98,7 +112,8 @@ namespace SkiingInSkyrim::Skiing
         Core::Vec2 g_stick{};
 
         Core::Vec2 g_heldKeys{};
-        float      g_keyHold = 0.0F;
+        float      g_keyHold = 0.0F;  // seconds the same keys have been held
+        float      g_keyPush = 0.0F;  // seconds any keys have been held
         float      g_mouseTurn = 0.0F;  // radians of mouse steering not yet applied
 
         Core::Vec2 FreshStick(float x, float y, float age)
@@ -137,8 +152,13 @@ namespace SkiingInSkyrim::Skiing
                 (input.forward ? 1.0F : 0.0F) - (input.back ? 1.0F : 0.0F) };
             g_keyHold = keys.x != g_heldKeys.x || keys.y != g_heldKeys.y ? 0.0F : g_keyHold + std::max(0.0F, delta);
             g_heldKeys = keys;
-            const float keyBuild = std::min(1.0F, g_keyHold / kKeyAimBuildSeconds);
-            const float keyStrength = keyBuild * keyBuild;
+            g_keyPush = keys.x == 0.0F && keys.y == 0.0F ? 0.0F : g_keyPush + std::max(0.0F, delta);
+            const auto keyStrengthAfter = [](float seconds) {
+                const float build = std::min(1.0F, seconds / kKeyAimBuildSeconds);
+                return build * build;
+            };
+            const float keyStrength = keyStrengthAfter(g_keyHold);
+            const float keyPush = keyStrengthAfter(g_keyPush);
 
             constexpr float kRadians = std::numbers::pi_v<float> / 180.0F;
             const int       mouseX = Input::TakeMouseX();
@@ -147,6 +167,7 @@ namespace SkiingInSkyrim::Skiing
                 if (keys.x != 0.0F || keys.y != 0.0F) {
                     ski.aimYaw = viewYaw + std::atan2(keys.x, keys.y);
                     ski.aimStrength = keyStrength;
+                    ski.pushStrength = keyPush;
                 } else {
                     ski.aimYaw = viewYaw + std::atan2(g_stick.x, g_stick.y);
                     ski.aimStrength = Core::AimStrength(g_stick.x, g_stick.y, physics.aimDeadzone);
@@ -161,9 +182,11 @@ namespace SkiingInSkyrim::Skiing
             if (keys.y > 0.0F) {
                 ski.aimYaw = ski.yaw;
                 ski.aimStrength = keyStrength;
+                ski.pushStrength = keyPush;
             } else if (keys.y < 0.0F) {
                 ski.aimYaw = viewYaw + std::numbers::pi_v<float>;
                 ski.aimStrength = keyStrength;
+                ski.pushStrength = keyPush;
             } else {
                 ski.aimYaw = viewYaw + std::atan2(g_stick.x, g_stick.y);
                 ski.aimStrength = Core::AimStrength(g_stick.x, g_stick.y, physics.aimDeadzone);
@@ -343,7 +366,7 @@ namespace SkiingInSkyrim::Skiing
             SetCommand({});
             SetOverlay({ .active = false, .inactiveReason = reason });
             Camera::Reset();
-            Skis::Hide();
+            SetBody({});
             return;
         }
 
@@ -394,13 +417,20 @@ namespace SkiingInSkyrim::Skiing
         g_sinceStride = step.skated ? 0.0F : g_sinceStride + delta;
 
         SetYaw(player, step.yaw);
-        Skis::Show(player, skis,
-            {
-                .yaw = step.yaw,
-                .edgeRadians = step.edgeDegrees * std::numbers::pi_v<float> / 180.0F,
-                .groundNormal = grounded && ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F },
-            },
-            delta);
+        Skis::Prepare(skis);
+        Pose::Prepare(player);
+        const float turnBlend = starting ? 1.0F : 1.0F - std::exp(-std::max(0.0F, delta) / kTurnSmoothingSeconds);
+        g_turnAcceleration += (step.turnAcceleration - g_turnAcceleration) * turnBlend;
+        SetBody({
+            .active = true,
+            .tuck = step.tuck,
+            .yaw = step.yaw,
+            .edgeRadians = step.edgeDegrees * std::numbers::pi_v<float> / 180.0F,
+            .turnAcceleration = g_turnAcceleration,
+            .gravity = physics.gravity,
+            .groundNormal = grounded && ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F },
+            .skis = skis,
+        });
         Camera::Apply(player, delta, step.velocity, lookTurn);
         SetCommand({ true, step.velocity });
         g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);
@@ -455,5 +485,11 @@ namespace SkiingInSkyrim::Skiing
     {
         std::scoped_lock lock(g_overlayLock);
         return g_overlay;
+    }
+
+    Body GetBody()
+    {
+        std::scoped_lock lock(g_overlayLock);
+        return g_body;
     }
 }

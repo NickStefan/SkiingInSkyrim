@@ -52,4 +52,20 @@ namespace SkiingInSkyrim::Skiing
 
     // Any thread.
     OverlayData GetOverlay();
+
+    // What the body and the skis are doing, for posing them on the animation thread.
+    struct Body
+    {
+        bool               active{ false };
+        float              tuck{ 0.0F };
+        float              yaw{ 0.0F };          // ski heading, world, radians
+        float              edgeRadians{ 0.0F };  // signed, positive = right edge
+        float              turnAcceleration{ 0.0F };  // m/s^2, smoothed, positive right
+        float              gravity{ 9.81F };
+        Core::Vec3         groundNormal{ 0.0F, 0.0F, 1.0F };  // world
+        RE::TESObjectARMO* skis{ nullptr };
+    };
+
+    // Any thread.
+    Body GetBody();
 }

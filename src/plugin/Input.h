@@ -36,8 +36,7 @@ namespace SkiingInSkyrim::Input
     void Install();
 
     // Binding capture for the settings menu. While capturing, the next button press (other than Escape,
-    // which cancels, or a left click) becomes the binding; for the toggle, a button already held on the
-    // same device becomes its modifier.
+    // which cancels, or a left click) becomes the binding.
     void                             BeginCapture(Settings::Binding binding) noexcept;
     void                             CancelCapture() noexcept;
     std::optional<Settings::Binding> Capturing() noexcept;

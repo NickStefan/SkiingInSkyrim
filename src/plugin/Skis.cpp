@@ -1,6 +1,7 @@
 #include "plugin/Skis.h"
 
 #include "core/SkiPose.h"
+#include "plugin/Skeleton.h"
 #include "plugin/SkiingState.h"
 
 namespace SkiingInSkyrim::Skis
@@ -13,10 +14,8 @@ namespace SkiingInSkyrim::Skis
         // Game units. A model without SkiLeft and SkiRight nodes is taken to be one ski and scaled to this
         // length (1.8 m); one copy goes under each foot.
         constexpr float kOneSkiLength = 1.8F * 70.0F;
-        // Half a ski's width: how far an edged ski is lifted onto its edge.
-        constexpr float kHalfWidth = 5.0F;
         // How far right of the character each ski's centre sits (left is negative): where the foot is, kept
-        // within these, smoothed over kStanceSeconds so the animation's footwork doesn't shuffle them.
+        // within these, smoothed over kStanceSeconds so the footwork doesn't shuffle them.
         constexpr float kStanceDefault = 8.0F;
         constexpr float kStanceMin = 6.0F;
         constexpr float kStanceMax = 20.0F;
@@ -26,21 +25,30 @@ namespace SkiingInSkyrim::Skis
         constexpr int kRescanFrames = 10;
 
         std::atomic<int>   g_rescan{ kRescanFrames };
-        RE::TESObjectARMO* g_worn = nullptr;
+        RE::TESObjectARMO* g_worn = nullptr;  // main thread
 
-        struct Visual
+        // Copies of the skis' model, not yet attached to anything.
+        struct Model
         {
             RE::TESObjectARMO*                           armor{ nullptr };
             bool                                         failed{ false };
             std::vector<RE::NiPointer<RE::NiNode>>       roots;  // attached to the character: the model, or two copies
             std::array<RE::NiPointer<RE::NiAVObject>, 2> parts;  // left, right
             float                                        scale{ 1.0F };
+        };
+
+        struct Placed
+        {
+            Model                                        model;
             RE::NiNode*                                  attachedTo{ nullptr };
             std::array<RE::NiPointer<RE::NiAVObject>, 2> feet;
             std::array<float, 2>                         stance{ -kStanceDefault, kStanceDefault };
             bool                                         stanceKnown{ false };
         };
-        Visual g_visual;
+
+        std::mutex g_lock;
+        Model      g_prepared;  // built on the main thread
+        Placed     g_placed;    // in use on the animation thread
 
         RE::TESObjectARMO* FindWorn(RE::PlayerCharacter* player)
         {
@@ -49,18 +57,6 @@ namespace SkiingInSkyrim::Skis
                 auto* armor = object->As<RE::TESObjectARMO>();
                 if (armor && entry.second && entry.second->IsWorn() && armor->HasKeywordString(kKeyword)) {
                     return armor;
-                }
-            }
-            return nullptr;
-        }
-
-        RE::NiPointer<RE::NiNode> Load(const std::string& path)
-        {
-            const RE::BSModelDB::DBTraits::ArgsType args;
-            for (const auto& candidate : { path, "Meshes\\" + path }) {
-                RE::NiPointer<RE::NiNode> model;
-                if (RE::BSModelDB::Demand(candidate.c_str(), model, args) == RE::BSResource::ErrorCode::kNone && model) {
-                    return model;
                 }
             }
             return nullptr;
@@ -88,92 +84,71 @@ namespace SkiingInSkyrim::Skis
             return node;
         }
 
-        void Detach()
+        Model Build(RE::TESObjectARMO* armor)
         {
-            for (auto& root : g_visual.roots) {
-                if (g_visual.attachedTo && root->parent == g_visual.attachedTo) {
-                    g_visual.attachedTo->DetachChild2(root.get());
-                }
-            }
-            g_visual.attachedTo = nullptr;
-            g_visual.feet = {};
-            g_visual.stanceKnown = false;
-        }
-
-        void Build(RE::TESObjectARMO* armor)
-        {
-            Detach();
-            g_visual = {};
-            g_visual.armor = armor;
+            Model result{ .armor = armor };
             const std::string path = armor->worldModels[RE::TESBipedModelForm::Sexes::kMale].GetModel();
-            const auto        model = path.empty() ? nullptr : Load(path);
-            if (!model) {
-                spdlog::warn("skis {:08X}: could not load world model '{}'", armor->GetFormID(), path);
-                g_visual.failed = true;
-                return;
-            }
-            auto first = Copy(model.get());
+            const auto        model = path.empty() ? nullptr : Skeleton::LoadModel(path);
+            auto              first = model ? Copy(model.get()) : nullptr;
             if (!first) {
-                g_visual.failed = true;
-                return;
+                spdlog::warn("skis {:08X}: could not load world model '{}'", armor->GetFormID(), path);
+                result.failed = true;
+                return result;
             }
             auto* left = first->GetObjectByName(kPartNames[0]);
             auto* right = first->GetObjectByName(kPartNames[1]);
             if (left && right) {
                 first->local = {};
-                g_visual.parts = { RE::NiPointer<RE::NiAVObject>(left), RE::NiPointer<RE::NiAVObject>(right) };
-                g_visual.roots = { first };
+                result.parts = { RE::NiPointer<RE::NiAVObject>(left), RE::NiPointer<RE::NiAVObject>(right) };
+                result.roots = { first };
                 spdlog::info("skis {:08X}: '{}' has {} and {}", armor->GetFormID(), path, kPartNames[0], kPartNames[1]);
-                return;
+                return result;
             }
             auto second = Copy(model.get());
             if (!second) {
-                g_visual.failed = true;
-                return;
+                result.failed = true;
+                return result;
             }
             RE::NiUpdateData update{};
             first->Update(update);
             const float radius = first->worldBound.radius;
-            g_visual.scale = radius > 1.0F ? kOneSkiLength * 0.5F / radius : 1.0F;
-            g_visual.parts = { RE::NiPointer<RE::NiAVObject>(first.get()), RE::NiPointer<RE::NiAVObject>(second.get()) };
-            g_visual.roots = { first, second };
+            result.scale = radius > 1.0F ? kOneSkiLength * 0.5F / radius : 1.0F;
+            result.parts = { RE::NiPointer<RE::NiAVObject>(first.get()), RE::NiPointer<RE::NiAVObject>(second.get()) };
+            result.roots = { first, second };
             spdlog::info("skis {:08X}: '{}' has no {}/{} nodes; one copy per foot, scaled {:.2f}", armor->GetFormID(),
-                path, kPartNames[0], kPartNames[1], g_visual.scale);
+                path, kPartNames[0], kPartNames[1], result.scale);
+            return result;
         }
 
-        void Attach(RE::NiNode* character)
+        void Detach(Placed& placed)
         {
-            for (auto& root : g_visual.roots) {
+            for (auto& root : placed.model.roots) {
+                if (placed.attachedTo && root->parent == placed.attachedTo) {
+                    placed.attachedTo->DetachChild2(root.get());
+                }
+            }
+            placed.attachedTo = nullptr;
+            placed.feet = {};
+            placed.stanceKnown = false;
+        }
+
+        void Attach(Placed& placed, RE::NiNode* character)
+        {
+            for (auto& root : placed.model.roots) {
                 character->AttachChild(root.get(), true);
             }
-            g_visual.attachedTo = character;
+            placed.attachedTo = character;
             for (std::size_t i = 0; i < 2; ++i) {
-                g_visual.feet[i].reset(character->GetObjectByName(kFootBones[i]));
+                placed.feet[i].reset(character->GetObjectByName(kFootBones[i]));
             }
-            if (!g_visual.feet[0] || !g_visual.feet[1]) {
+            if (!placed.feet[0] || !placed.feet[1]) {
                 spdlog::info("skis: no foot bones on the character; using a fixed stance");
             }
         }
 
-        // How far right of the character's origin a foot is, from where the skeleton last put it.
-        float FootLateral(const RE::NiAVObject* foot, const RE::NiAVObject& character, float fallback)
-        {
-            if (!foot || character.world.scale <= 0.0F) {
-                return fallback;
-            }
-            const auto  offset = foot->world.translate - character.world.translate;
-            const auto& rotate = character.world.rotate.entry;
-            return (rotate[0][0] * offset.x + rotate[1][0] * offset.y + rotate[2][0] * offset.z) / character.world.scale;
-        }
-
         void SetLocal(RE::NiAVObject& part, const Core::SkiPose& pose, float scale)
         {
-            const Core::Vec3 axes[3] = { pose.right, pose.forward, pose.up };
-            for (int column = 0; column < 3; ++column) {
-                part.local.rotate.entry[0][column] = axes[column].x;
-                part.local.rotate.entry[1][column] = axes[column].y;
-                part.local.rotate.entry[2][column] = axes[column].z;
-            }
+            part.local.rotate = Skeleton::FromAxes(pose.right, pose.forward, pose.up);
             part.local.translate = { pose.position.x, pose.position.y, pose.position.z };
             part.local.scale = scale;
         }
@@ -204,8 +179,12 @@ namespace SkiingInSkyrim::Skis
 
     void Reset()
     {
-        Detach();
-        g_visual = {};
+        {
+            std::scoped_lock lock(g_lock);
+            Detach(g_placed);
+            g_placed = {};
+            g_prepared = {};
+        }
         g_worn = nullptr;
         SetSkisWorn(false);
         g_rescan = kRescanFrames;
@@ -231,52 +210,68 @@ namespace SkiingInSkyrim::Skis
         return g_worn;
     }
 
-    void Show(RE::PlayerCharacter* player, RE::TESObjectARMO* skis, const Pose& pose, float delta)
+    void Prepare(RE::TESObjectARMO* skis)
     {
         if (!skis) {
-            Hide();
             return;
         }
-        if (skis != g_visual.armor) {
-            Build(skis);
+        {
+            std::scoped_lock lock(g_lock);
+            if (g_prepared.armor == skis) {
+                return;
+            }
+        }
+        auto model = Build(skis);
+        std::scoped_lock lock(g_lock);
+        g_prepared = std::move(model);
+    }
+
+    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<float, 2>* stance)
+    {
+        std::scoped_lock lock(g_lock);
+        if (!body.active || !body.skis) {
+            Detach(g_placed);
+            return;
+        }
+        if (g_placed.model.armor != g_prepared.armor) {
+            Detach(g_placed);
+            g_placed = { .model = g_prepared };
         }
         auto* character3D = player->Get3D(false);
         auto* character = character3D ? character3D->AsNode() : nullptr;
-        if (g_visual.failed || g_visual.roots.empty() || !character) {
-            Detach();
+        if (g_placed.model.armor != body.skis || g_placed.model.failed || g_placed.model.roots.empty() || !character) {
+            Detach(g_placed);
             return;
         }
-        if (g_visual.attachedTo != character || g_visual.roots.front()->parent != character) {
-            Detach();
-            Attach(character);
+        if (g_placed.attachedTo != character || g_placed.model.roots.front()->parent != character) {
+            Detach(g_placed);
+            Attach(g_placed, character);
         }
 
-        const float blend = g_visual.stanceKnown ? 1.0F - std::exp(-std::max(0.0F, delta) / kStanceSeconds) : 1.0F;
-        for (std::size_t i = 0; i < 2; ++i) {
-            const float side = i == 0 ? -1.0F : 1.0F;
-            const float lateral = FootLateral(g_visual.feet[i].get(), *character, side * kStanceDefault) * side;
-            const float target = side * std::clamp(lateral, kStanceMin, kStanceMax);
-            g_visual.stance[i] += (target - g_visual.stance[i]) * blend;
+        const float blend = g_placed.stanceKnown ? 1.0F - std::exp(-std::max(0.0F, delta) / kStanceSeconds) : 1.0F;
+        if (stance) {
+            g_placed.stance = *stance;
+        } else {
+            for (std::size_t i = 0; i < 2; ++i) {
+                const float side = i == 0 ? -1.0F : 1.0F;
+                const auto* foot = g_placed.feet[i].get();
+                const float lateral = foot ? Skeleton::Relative(foot, character).translate.x * side : kStanceDefault;
+                const float target = side * std::clamp(lateral, kStanceMin, kStanceMax);
+                g_placed.stance[i] += (target - g_placed.stance[i]) * blend;
+            }
         }
-        g_visual.stanceKnown = true;
+        g_placed.stanceKnown = true;
 
-        // Into the character's frame (x right, y forward), which is how the character's 3D will be turned.
         const float heading = player->data.angle.z;
-        const Core::Vec3 normal{
-            pose.groundNormal.x * std::cos(heading) - pose.groundNormal.y * std::sin(heading),
-            pose.groundNormal.x * std::sin(heading) + pose.groundNormal.y * std::cos(heading),
-            pose.groundNormal.z,
-        };
-        const float yaw = std::remainder(pose.yaw - heading, 2.0F * std::numbers::pi_v<float>);
+        const auto  normal = Skeleton::ToCharacter(body.groundNormal, heading);
+        const float yaw = std::remainder(body.yaw - heading, 2.0F * std::numbers::pi_v<float>);
         for (std::size_t i = 0; i < 2; ++i) {
-            SetLocal(*g_visual.parts[i], Core::PlaceSki(normal, yaw, pose.edgeRadians, g_visual.stance[i], kHalfWidth),
-                g_visual.scale);
+            SetLocal(*g_placed.model.parts[i], Core::PlaceSki(normal, yaw, body.edgeRadians, g_placed.stance[i], kHalfWidth),
+                g_placed.model.scale);
         }
         RE::NiUpdateData update{};
-        for (auto& root : g_visual.roots) {
+        for (auto& root : g_placed.model.roots) {
             root->Update(update);
         }
     }
-
-    void Hide() { Detach(); }
 }

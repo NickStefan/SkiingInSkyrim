@@ -74,11 +74,18 @@ namespace SkiingInSkyrim::Core
         constexpr float kSkateAimStrength = 0.3F;
         constexpr float kSkateAimDegrees = 45.0F;
 
-        // Tucking: how firm a push (aim strength) and how close to where the skis point (cosine of the angle).
+        // Tucking: how firm a push and how close to where the skis point (cosine of the angle). Getting into
+        // a tuck takes a push straight ahead; once in, steering within the wider hold window keeps it.
         constexpr float kTuckStartStrength = 0.5F;
         constexpr float kTuckFullStrength = 0.9F;
         const float     kTuckStartAlign = std::cos(30.0F * kRadians);
         const float     kTuckFullAlign = std::cos(10.0F * kRadians);
+        const float     kTuckHoldStartAlign = std::cos(80.0F * kRadians);
+        const float     kTuckHoldFullAlign = std::cos(60.0F * kRadians);
+        // Slower than this (m/s), the path's curve isn't measured: the direction of travel is too noisy.
+        constexpr float kTurnMinSpeed = 0.5F;
+        constexpr float kTuckInSeconds = 0.3F;
+        constexpr float kTuckOutSeconds = 0.4F;
 
         float SkidSide(const SkiState& state, const SkiInput& input, float edgeTarget) noexcept
         {
@@ -257,6 +264,7 @@ namespace SkiingInSkyrim::Core
     {
         const float dt = std::max(0.0F, input.deltaSeconds);
         SkiStep result;
+        const Vec2 velocityBefore = state.velocity;
 
         const float edgeTarget = std::clamp(input.edgeTarget, -1.0F, 1.0F);
         const bool  skateEdge = input.edgeFromButtons && state.skateEdging;
@@ -314,12 +322,20 @@ namespace SkiingInSkyrim::Core
         // Steering: the skis turn toward where the stick aims, as firmly as it's pushed, or directly by the
         // mouse. Pushing firmly the way they already point tucks.
         const float aimStrength = std::clamp(input.aimStrength, 0.0F, 1.0F);
-        float       tuck = 0.0F;
+        const float pushStrength = std::max(aimStrength, std::clamp(input.pushStrength, 0.0F, 1.0F));
+        float       tuckTarget = 0.0F;
+        if (pushStrength > 0.0F) {
+            const float align = std::cos(input.aimYaw - yaw);
+            const float enter = Smoothstep(kTuckStartAlign, kTuckFullAlign, align);
+            const float hold = std::min(state.tuck, Smoothstep(kTuckHoldStartAlign, kTuckHoldFullAlign, align));
+            tuckTarget = Smoothstep(kTuckStartStrength, kTuckFullStrength, pushStrength) * std::max(enter, hold);
+        }
+        state.tuck = tuckTarget > state.tuck ? std::min(tuckTarget, state.tuck + dt / kTuckInSeconds)
+                                             : std::max(tuckTarget, state.tuck - dt / kTuckOutSeconds);
+        const float tuck = state.tuck;
         const float maxTurn = settings.steerDegreesPerSecond * kRadians * dt;
         yaw += std::clamp(input.yawTurn, -maxTurn, maxTurn);
         if (aimStrength > 0.0F) {
-            tuck = Smoothstep(kTuckStartStrength, kTuckFullStrength, aimStrength) *
-                   Smoothstep(kTuckStartAlign, kTuckFullAlign, std::cos(input.aimYaw - yaw));
             yaw = RotateToward(yaw, input.aimYaw, aimStrength * settings.steerDegreesPerSecond * kRadians * dt);
         } else if (input.yawTurn == 0.0F && !input.skidHeld && input.grounded && state.pivotAngle <= 0.0F &&
                    std::fabs(state.edge) <= kEdgeSideThreshold && settings.selfAlignDegreesPerSecond > 0.0F) {
@@ -445,6 +461,10 @@ namespace SkiingInSkyrim::Core
         result.edgeDegrees = std::copysign(edgeAngle * kDegrees, state.edge);
         result.parked = state.parked;
         result.tuck = tuck;
+        if (input.grounded && !result.blocked && dt > 0.0F && Length(velocity) > kTurnMinSpeed) {
+            const Vec2 change{ velocity.x - velocityBefore.x, velocity.y - velocityBefore.y };
+            result.turnAcceleration = Dot(change, Right(std::atan2(velocity.x, velocity.y))) / dt;
+        }
         if (state.pivotAngle > 0.0F) {
             result.pivotDegrees = state.pivotSide * state.pivotAngle * kDegrees;
         }

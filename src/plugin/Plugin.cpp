@@ -1,6 +1,7 @@
 #include "plugin/Camera.h"
 #include "plugin/Input.h"
 #include "plugin/Menu.h"
+#include "plugin/Pose.h"
 #include "plugin/Settings.h"
 #include "plugin/Skis.h"
 #include "plugin/Tdm.h"
@@ -68,5 +69,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     }
     SkiingInSkyrim::Telemetry::Install();
     SkiingInSkyrim::Input::Install();
+    SkiingInSkyrim::Pose::Install();
     return true;
 }

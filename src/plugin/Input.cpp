@@ -100,16 +100,6 @@ namespace SkiingInSkyrim::Input
             return state && Held(*state, now) ? state->value : 0.0F;
         }
 
-        bool ModifierHeld(const Settings::Hotkey& hotkey, Clock::time_point now)
-        {
-            return !hotkey.modifier.Bound() || Held(hotkey.modifier, now);
-        }
-
-        bool HotkeyHeld(const Settings::Hotkey& hotkey, Clock::time_point now)
-        {
-            return hotkey.Bound() && Held(hotkey.key, now) && ModifierHeld(hotkey, now);
-        }
-
         void Track(const RE::ButtonEvent& button)
         {
             g_state.buttons[ButtonKey(button.GetDevice(), button.GetIDCode())].Set(button);
@@ -265,8 +255,8 @@ namespace SkiingInSkyrim::Input
         result.triggerRight = HeldValue(RE::INPUT_DEVICE::kGamepad, kRightTrigger, now);
         result.mouseLeft = Held(Button{ RE::INPUT_DEVICE::kMouse, kLeftMouse }, now);
         result.mouseRight = Held(Button{ RE::INPUT_DEVICE::kMouse, kRightMouse }, now);
-        result.skid = HotkeyHeld(Settings::GetBinding(Binding::SkidKeyboard), now) ||
-                       HotkeyHeld(Settings::GetBinding(Binding::SkidGamepad), now);
+        result.skid = Held(Settings::GetBinding(Binding::SkidKeyboard), now) ||
+                       Held(Settings::GetBinding(Binding::SkidGamepad), now);
 
         std::optional<Clock::time_point> latest;
         for (const auto& key : g_state.movement) {
@@ -329,7 +319,7 @@ namespace SkiingInSkyrim::Input
         if (button->IsDown()) {
             g_capturePressed.insert(pressed);
         }
-        // Bind on release, so a modifier can be pressed first and held.
+        // Bind on release, of a button pressed since capture began.
         if (!button->IsUp()) {
             return true;
         }
@@ -337,7 +327,7 @@ namespace SkiingInSkyrim::Input
             return false;
         }
 
-        Settings::SetBinding(*binding, { { device, id }, {} });
+        Settings::SetBinding(*binding, { device, id });
         Settings::Save();
         CancelCapture();
         return true;

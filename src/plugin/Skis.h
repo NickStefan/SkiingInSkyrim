@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/Vec3.h"
+#include "plugin/Skiing.h"
 
 namespace SkiingInSkyrim::Skis
 {
@@ -18,15 +18,14 @@ namespace SkiingInSkyrim::Skis
     // Main thread. The skis the player wears, if any.
     [[nodiscard]] RE::TESObjectARMO* Worn(RE::PlayerCharacter* player);
 
-    struct Pose
-    {
-        float      yaw{ 0.0F };   // ski heading, radians, world
-        float      edgeRadians{ 0.0F };  // signed, positive = right edge
-        Core::Vec3 groundNormal{ 0.0F, 0.0F, 1.0F };  // world
-    };
+    // Main thread: loads the skis' model, when they change.
+    void Prepare(RE::TESObjectARMO* skis);
 
-    // Main thread, every frame while skiing: draws the worn skis' model under the feet.
-    void Show(RE::PlayerCharacter* player, RE::TESObjectARMO* skis, const Pose& pose, float delta);
-    // Main thread: takes them away again.
-    void Hide();
+    // Half a ski's width, game units: how far an edged ski is lifted onto its edge.
+    inline constexpr float kHalfWidth = 5.0F;
+
+    // Animation thread, after the body is posed: draws the skis under the feet while skiing, and takes them
+    // away otherwise. Each ski's centre goes stance (left, right) units right of the character if given,
+    // otherwise under the feet wherever the animation put them.
+    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<float, 2>* stance);
 }

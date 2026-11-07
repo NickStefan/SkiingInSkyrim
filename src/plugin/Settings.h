@@ -2,6 +2,7 @@
 
 #include "core/CameraFollow.h"
 #include "core/SkiPhysics.h"
+#include "core/Stance.h"
 
 namespace SkiingInSkyrim::Settings
 {
@@ -16,16 +17,6 @@ namespace SkiingInSkyrim::Settings
             return Bound() && device == otherDevice && id == otherId;
         }
         [[nodiscard]] bool operator==(const Button&) const = default;
-    };
-
-    // A button, optionally held together with a modifier (e.g. LB + X).
-    struct Hotkey
-    {
-        Button key;
-        Button modifier;
-
-        [[nodiscard]] bool Bound() const noexcept { return key.Bound(); }
-        [[nodiscard]] bool operator==(const Hotkey&) const = default;
     };
 
     enum class Binding
@@ -59,10 +50,12 @@ namespace SkiingInSkyrim::Settings
     using FloatField = FloatFieldOf<Core::SkiSettings>;
     using BoolField = BoolFieldOf<Core::SkiSettings>;
     using CameraField = FloatFieldOf<Core::CameraFollowSettings>;
+    using StanceField = FloatFieldOf<Core::StanceSettings>;
 
     [[nodiscard]] std::span<const FloatField>  PhysicsFields() noexcept;
     [[nodiscard]] std::span<const BoolField>   PhysicsSwitches() noexcept;
     [[nodiscard]] std::span<const CameraField> CameraFields() noexcept;
+    [[nodiscard]] std::span<const StanceField> StanceFields() noexcept;
 
     // Main thread, once game data and input devices exist.
     void Load();
@@ -76,10 +69,16 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] Core::CameraFollowSettings Camera();
     void                                     SetCamera(const Core::CameraFollowSettings& camera);
 
-    [[nodiscard]] Hotkey      GetBinding(Binding binding);
-    [[nodiscard]] std::string BindingName(Binding binding);  // "LB + X", or empty when unbound
+    // The skier's body pose while skiing.
+    [[nodiscard]] bool                 StanceEnabled();
+    void                               SetStanceEnabled(bool enabled);
+    [[nodiscard]] Core::StanceSettings Stance();
+    void                               SetStance(const Core::StanceSettings& stance);
+
+    [[nodiscard]] Button      GetBinding(Binding binding);
+    [[nodiscard]] std::string BindingName(Binding binding);  // "X", or empty when unbound
     // Looks up display names through the game's input manager.
-    void                      SetBinding(Binding binding, Hotkey hotkey);
+    void                      SetBinding(Binding binding, Button button);
 
     // Master switch: off, wearing skis does nothing.
     [[nodiscard]] bool ModEnabled();

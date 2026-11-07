@@ -135,17 +135,49 @@ namespace SkiingInSkyrim::Settings
                 &C::lookReturnSeconds, 0.05F, 3.0F, "%.2f" },
         };
 
+        using T = Core::StanceSettings;
+        constexpr StanceField kStanceFields[] = {
+            { "AnkleFlexDegrees", "Ankle flex", "Degrees the shins lean forward.", &T::ankleFlexDegrees, 0.0F, 45.0F, "%.0f" },
+            { "HipFlexDegrees", "Hip flex", "Degrees the thighs lean forward; with the ankles, how far the knees bend.",
+                &T::hipFlexDegrees, 0.0F, 90.0F, "%.0f" },
+            { "TorsoLeanDegrees", "Torso lean", "Degrees the upper body leans forward.", &T::torsoLeanDegrees, -10.0F, 80.0F,
+                "%.0f" },
+            { "ArmOutDegrees", "Arms out", "Degrees the arms are held out from the sides.", &T::armOutDegrees, 0.0F, 90.0F,
+                "%.0f" },
+            { "ArmForwardDegrees", "Arms forward", "Degrees the arms swing forward from hanging, relative to the torso.",
+                &T::armForwardDegrees, -30.0F, 120.0F, "%.0f" },
+            { "ElbowBendDegrees", "Elbow bend", "Degrees the elbows bend, bringing the hands forward.", &T::elbowBendDegrees,
+                0.0F, 140.0F, "%.0f" },
+            { "TuckAnkleDegrees", "Tuck: ankles", "Degrees of ankle flex added at a full tuck.", &T::tuckAnkleDegrees, 0.0F,
+                40.0F, "%.0f" },
+            { "TuckHipDegrees", "Tuck: hips", "Degrees of hip flex added at a full tuck.", &T::tuckHipDegrees, 0.0F, 80.0F,
+                "%.0f" },
+            { "TuckLeanDegrees", "Tuck: torso", "Degrees of torso lean added at a full tuck.", &T::tuckLeanDegrees, 0.0F, 80.0F,
+                "%.0f" },
+            { "TuckArmForwardDegrees", "Tuck: arms", "Degrees the arms swing further forward at a full tuck.",
+                &T::tuckArmForwardDegrees, -30.0F, 90.0F, "%.0f" },
+            { "TurnLean", "Turn: lean", "How far the body leans into a turn, as a fraction of what the turn's force "
+                                        "calls for. 0 stays upright.",
+                &T::turnLean, 0.0F, 2.0F, "%.2f" },
+            { "HipAngulation", "Turn: hips in", "Fraction of the edge angle the lean doesn't cover that the hips "
+                                                "push in by, so edging across the hill puts the hips into it.",
+                &T::hipAngulation, 0.0F, 1.0F, "%.2f" },
+            { "UpperBodyUpright", "Turn: upper body upright", "Fraction of the lean the upper body takes back, "
+                                                             "staying more upright than the legs.",
+                &T::upperBodyUpright, 0.0F, 1.0F, "%.2f" },
+        };
+
         struct BindingInfo
         {
             Binding     binding;
             const char* key;  // INI key prefix
             const char* help;
-            Hotkey      defaults;
+            Button      defaults;
         };
 
         const BindingInfo kBindings[] = {
-            { Binding::SkidKeyboard, "SkidKey", "Skid (keyboard/mouse)", { { RE::INPUT_DEVICE::kKeyboard, kLeftShift }, {} } },
-            { Binding::SkidGamepad, "SkidButton", "Skid (gamepad)", { { RE::INPUT_DEVICE::kGamepad, kGamepadX }, {} } },
+            { Binding::SkidKeyboard, "SkidKey", "Skid (keyboard/mouse)", { RE::INPUT_DEVICE::kKeyboard, kLeftShift } },
+            { Binding::SkidGamepad, "SkidButton", "Skid (gamepad)", { RE::INPUT_DEVICE::kGamepad, kGamepadX } },
         };
         constexpr std::size_t kBindingCount = std::size(kBindings);
 
@@ -164,20 +196,67 @@ namespace SkiingInSkyrim::Settings
         {
             Core::SkiSettings                       physics;
             Core::CameraFollowSettings              camera;
-            std::array<Hotkey, kBindingCount>       bindings;
+            std::array<Button, kBindingCount>       bindings;
             std::array<std::string, kBindingCount>  bindingNames;
             bool                                    modEnabled{ true };
-            bool                                    showOverlay{ false };
+            bool                                    showOverlay{ true };
             bool                                    aimWithRightStick{ false };
             float                                   mouseSteerSensitivity{ 0.1F };
             bool                                    traceShaking{ false };
+            bool                                    stanceEnabled{ true };
+            Core::StanceSettings                    stance;
         };
 
         std::mutex g_lock;
         State      g_state;
 
+        // The game names gamepad buttons by their XInput bit (16384 for X); these are the Xbox labels, which
+        // the Steam Deck shares. The triggers are Skyrim's own codes.
+        constexpr std::pair<std::uint32_t, const char*> kGamepadNames[] = {
+            { 0x0001, "D-pad Up" }, { 0x0002, "D-pad Down" }, { 0x0004, "D-pad Left" }, { 0x0008, "D-pad Right" },
+            { 0x0010, "Start" }, { 0x0020, "Back" }, { 0x0040, "Left Stick (click)" }, { 0x0080, "Right Stick (click)" },
+            { 0x0100, "LB" }, { 0x0200, "RB" }, { 0x1000, "A" }, { 0x2000, "B" }, { 0x4000, "X" }, { 0x8000, "Y" },
+            { 0x0009, "LT" }, { 0x000A, "RT" },
+        };
+
+        // Lowercase letters and digits only, so "d-pad up" and "DpadUp" both match "D-pad Up".
+        std::string Simplified(std::string_view text)
+        {
+            std::string result;
+            for (const char c : text) {
+                if (std::isalnum(static_cast<unsigned char>(c))) {
+                    result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                }
+            }
+            return result;
+        }
+
+        const char* GamepadName(std::uint32_t id)
+        {
+            for (const auto& [gamepadId, label] : kGamepadNames) {
+                if (gamepadId == id) {
+                    return label;
+                }
+            }
+            return nullptr;
+        }
+
+        std::optional<std::uint32_t> GamepadId(std::string_view name)
+        {
+            const auto wanted = Simplified(name);
+            for (const auto& [id, label] : kGamepadNames) {
+                if (Simplified(label) == wanted) {
+                    return id;
+                }
+            }
+            return std::nullopt;
+        }
+
         std::string ButtonName(Button button)
         {
+            if (const char* label = button.device == RE::INPUT_DEVICE::kGamepad ? GamepadName(button.id) : nullptr) {
+                return label;
+            }
             RE::BSFixedString name;
             auto* manager = RE::BSInputDeviceManager::GetSingleton();
             if (manager && manager->GetButtonNameFromID(button.device, static_cast<std::int32_t>(button.id), name) &&
@@ -187,17 +266,23 @@ namespace SkiingInSkyrim::Settings
             return fmt::format("device {} button {}", static_cast<int>(button.device), button.id);
         }
 
-        std::string HotkeyName(const Hotkey& hotkey)
-        {
-            if (!hotkey.Bound()) {
-                return {};
-            }
-            return hotkey.modifier.Bound() ? ButtonName(hotkey.modifier) + " + " + ButtonName(hotkey.key) :
-                                             ButtonName(hotkey.key);
-        }
+        std::string BoundName(Button button) { return button.Bound() ? ButtonName(button) : std::string{}; }
 
-        std::optional<Button> ReadButton(const Core::Ini& ini, Binding binding, const std::string& key)
+        // Gamepad: "SkidButton = X" (or none). Keyboard or mouse: a device line and the key's number.
+        std::optional<Button> ReadButton(const Core::Ini& ini, const BindingInfo& info)
         {
+            const std::string key = info.key;
+            if (info.binding == Binding::SkidGamepad) {
+                const auto value = ini.Get("Controls", key);
+                if (!value) {
+                    return std::nullopt;
+                }
+                if (Simplified(*value).empty() || Simplified(*value) == "none") {
+                    return Button{};
+                }
+                const auto id = GamepadId(*value);
+                return id ? std::optional{ Button{ RE::INPUT_DEVICE::kGamepad, *id } } : std::nullopt;
+            }
             const auto device = ini.GetInt("Controls", key + "Device");
             const auto id = ini.GetInt("Controls", key);
             if (!device) {
@@ -206,22 +291,28 @@ namespace SkiingInSkyrim::Settings
             if (*device < 0) {
                 return Button{};
             }
-            if (!id || *id < 0 || !Accepts(binding, static_cast<RE::INPUT_DEVICE>(*device))) {
+            if (!id || *id < 0 || !Accepts(info.binding, static_cast<RE::INPUT_DEVICE>(*device))) {
                 return std::nullopt;
             }
             return Button{ static_cast<RE::INPUT_DEVICE>(*device), static_cast<std::uint32_t>(*id) };
         }
 
-        void WriteButton(std::string& text, const std::string& key, Button button)
+        void WriteButton(std::string& text, const BindingInfo& info, Button button)
         {
-            text += fmt::format("{}Device = {}\n{} = {}\n", key, button.Bound() ? static_cast<int>(button.device) : -1,
-                key, button.id);
+            if (info.binding == Binding::SkidGamepad) {
+                const char* name = button.Bound() ? GamepadName(button.id) : nullptr;
+                text += fmt::format("{} = {}\n", info.key, name ? name : "none");
+                return;
+            }
+            text += fmt::format("{}Device = {}\n{} = {}\n", info.key,
+                button.Bound() ? static_cast<int>(button.device) : -1, info.key, button.id);
         }
     }
 
     std::span<const FloatField>  PhysicsFields() noexcept { return kPhysicsFields; }
     std::span<const BoolField>   PhysicsSwitches() noexcept { return kPhysicsSwitches; }
     std::span<const CameraField> CameraFields() noexcept { return kCameraFields; }
+    std::span<const StanceField> StanceFields() noexcept { return kStanceFields; }
 
     void Load()
     {
@@ -240,12 +331,8 @@ namespace SkiingInSkyrim::Settings
                 loaded.modEnabled = *value != 0;
             }
             for (std::size_t i = 0; i < kBindingCount; ++i) {
-                const auto& info = kBindings[i];
-                if (const auto key = ReadButton(ini, info.binding, info.key)) {
-                    loaded.bindings[i] = { *key, {} };
-                    if (const auto modifier = ReadButton(ini, info.binding, std::string(info.key) + "Modifier")) {
-                        loaded.bindings[i].modifier = *modifier;
-                    }
+                if (const auto button = ReadButton(ini, kBindings[i])) {
+                    loaded.bindings[i] = *button;
                 }
             }
             if (const auto value = ini.GetInt("Controls", "AimWithRightStick")) {
@@ -278,12 +365,20 @@ namespace SkiingInSkyrim::Settings
             if (const auto value = ini.GetInt("Debug", "TraceShaking")) {
                 loaded.traceShaking = *value != 0;
             }
+            if (const auto value = ini.GetInt("Stance", "Enabled")) {
+                loaded.stanceEnabled = *value != 0;
+            }
+            for (const auto& field : kStanceFields) {
+                if (const auto value = ini.GetFloat("Stance", field.key)) {
+                    loaded.stance.*field.member = std::clamp(*value, field.min, field.max);
+                }
+            }
             spdlog::info("settings loaded from {}", kPath);
         } else {
             spdlog::info("no {}, using defaults", kPath);
         }
         for (std::size_t i = 0; i < kBindingCount; ++i) {
-            loaded.bindingNames[i] = HotkeyName(loaded.bindings[i]);
+            loaded.bindingNames[i] = BoundName(loaded.bindings[i]);
         }
 
         std::scoped_lock lock(g_lock);
@@ -303,12 +398,13 @@ namespace SkiingInSkyrim::Settings
         text += "; Wearing skis turns skiing on (1 on, 0 off: the mod does nothing).\n";
         text += fmt::format("ModEnabled = {}\n\n", state.modEnabled ? 1 : 0);
         text += "[Controls]\n";
-        text += "; Buttons: device (0 keyboard, 1 mouse, 2 gamepad, -1 unbound) and button id. A modifier, if bound,\n";
-        text += "; must be held when the button is pressed.\n";
+        text += "; Keyboard/mouse: device (0 keyboard, 1 mouse, -1 unbound) and key number. Gamepad: a button name\n";
+        text += "; (A, B, X, Y, LB, RB, LT, RT, Start, Back, Left Stick (click), Right Stick (click),\n";
+        text += "; D-pad Up/Down/Left/Right) or none.\n";
         for (std::size_t i = 0; i < kBindingCount; ++i) {
-            text += fmt::format("; {}\n", kBindings[i].help);
-            WriteButton(text, kBindings[i].key, state.bindings[i].key);
-            WriteButton(text, std::string(kBindings[i].key) + "Modifier", state.bindings[i].modifier);
+            const auto& name = state.bindingNames[i];
+            text += fmt::format("; {}: {}\n", kBindings[i].help, name.empty() ? "unbound" : name);
+            WriteButton(text, kBindings[i], state.bindings[i]);
         }
         text += "; Steer with the right stick or mouse instead of the left stick or A/D (1 on, 0 off). The left stick "
                 "or A/D then look around, and W tucks.\n";
@@ -321,6 +417,13 @@ namespace SkiingInSkyrim::Settings
         text += "[Debug]\n";
         text += "; Log every frame while the character shakes up and down (1 on, 0 off). Only for chasing jitter.\n";
         text += fmt::format("TraceShaking = {}\n\n", state.traceShaking ? 1 : 0);
+        text += "[Stance]\n";
+        text += "; Pose the body like a skier while skiing (1 on, 0 off: the game's own animation shows).\n";
+        text += fmt::format("Enabled = {}\n", state.stanceEnabled ? 1 : 0);
+        for (const auto& field : kStanceFields) {
+            text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.stance.*field.member);
+        }
+        text += "\n";
         text += "[Camera]\n";
         text += "; Third-person camera follows your direction of travel while skiing (1 on, 0 off).\n";
         text += fmt::format("FollowTravel = {}\n", state.camera.enabled ? 1 : 0);
@@ -365,7 +468,7 @@ namespace SkiingInSkyrim::Settings
         g_state.camera = camera;
     }
 
-    Hotkey GetBinding(Binding binding)
+    Button GetBinding(Binding binding)
     {
         std::scoped_lock lock(g_lock);
         return g_state.bindings[static_cast<std::size_t>(binding)];
@@ -377,15 +480,15 @@ namespace SkiingInSkyrim::Settings
         return g_state.bindingNames[static_cast<std::size_t>(binding)];
     }
 
-    void SetBinding(Binding binding, Hotkey hotkey)
+    void SetBinding(Binding binding, Button button)
     {
-        if (!Accepts(binding, hotkey.key.device)) {
-            hotkey = {};
+        if (!Accepts(binding, button.device)) {
+            button = {};
         }
-        auto name = HotkeyName(hotkey);
+        auto name = BoundName(button);
         spdlog::info("{} set to {}", kBindings[static_cast<std::size_t>(binding)].help, name.empty() ? "unbound" : name);
         std::scoped_lock lock(g_lock);
-        g_state.bindings[static_cast<std::size_t>(binding)] = hotkey;
+        g_state.bindings[static_cast<std::size_t>(binding)] = button;
         g_state.bindingNames[static_cast<std::size_t>(binding)] = std::move(name);
     }
 
@@ -429,6 +532,30 @@ namespace SkiingInSkyrim::Settings
     {
         std::scoped_lock lock(g_lock);
         g_state.traceShaking = trace;
+    }
+
+    bool StanceEnabled()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.stanceEnabled;
+    }
+
+    void SetStanceEnabled(bool enabled)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.stanceEnabled = enabled;
+    }
+
+    Core::StanceSettings Stance()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.stance;
+    }
+
+    void SetStance(const Core::StanceSettings& stance)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.stance = stance;
     }
 
     bool AimWithRightStick()
