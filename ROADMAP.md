@@ -47,6 +47,9 @@ sound conditions can key off it.
       cat tracks and switchbacks workable without analog triggers.
 - [ ] Detect snowy ground (and deep snow from snow-deformation mods) to switch powder on and off automatically.
       Weigh against compatibility.
+- [ ] Powder planing: in deep (snow-deformation) powder the skis, and the body with them, ride deep when slow and
+      rise toward the snow surface with speed. Skis are placed by the DLL, so the height is ours to set; the body
+      needs a visual-only lift that doesn't disturb the height smoothing. Pairs with snowy-ground detection.
 - [ ] Hops by pumping the stick (unweighting).
 - [ ] Revisit fall damage if landings still feel punishing.
 - [ ] Camera comfort: options that reduce motion sickness on long runs.
