@@ -51,11 +51,15 @@ namespace SkiingInSkyrim::Settings
     using BoolField = BoolFieldOf<Core::SkiSettings>;
     using CameraField = FloatFieldOf<Core::CameraFollowSettings>;
     using StanceField = FloatFieldOf<Core::StanceSettings>;
+    using StanceSwitch = BoolFieldOf<Core::StanceSettings>;
 
-    [[nodiscard]] std::span<const FloatField>  PhysicsFields() noexcept;
-    [[nodiscard]] std::span<const BoolField>   PhysicsSwitches() noexcept;
-    [[nodiscard]] std::span<const CameraField> CameraFields() noexcept;
-    [[nodiscard]] std::span<const StanceField> StanceFields() noexcept;
+    [[nodiscard]] std::span<const FloatField>   PhysicsFields() noexcept;
+    [[nodiscard]] std::span<const BoolField>    PhysicsSwitches() noexcept;
+    // Part of the physics settings, but shown and saved with the general settings.
+    [[nodiscard]] std::span<const FloatField>   StaminaFields() noexcept;
+    [[nodiscard]] std::span<const CameraField>  CameraFields() noexcept;
+    [[nodiscard]] std::span<const StanceField>  StanceFields() noexcept;
+    [[nodiscard]] std::span<const StanceSwitch> StanceSwitches() noexcept;
 
     // Main thread, once game data and input devices exist.
     void Load();

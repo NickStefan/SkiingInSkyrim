@@ -64,6 +64,8 @@ namespace SkiingInSkyrim::Skiing
         float              gravity{ 9.81F };
         float              strideSide{ 0.0F };      // latest skating stride's leg, +1 right, -1 left, 0 none
         float              strideSeconds{ -1.0F };  // since it started
+        float              slipRadians{ 0.0F };     // travel's angle from the skis, smoothed, positive right
+        float              airDropMetres{ 0.0F };   // off the ground: how far below the highest point; else 0
         Core::Vec3         groundNormal{ 0.0F, 0.0F, 1.0F };  // world
         RE::TESObjectARMO* skis{ nullptr };
     };

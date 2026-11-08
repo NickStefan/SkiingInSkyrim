@@ -32,6 +32,7 @@ namespace
         float push{ 0.0F };    // push strength beyond aim (keys)
         bool  buttons{ false };
         bool  grounded{ true };
+        bool  tired{ false };
     };
 
     // Packed snow: most tests are about the base model.
@@ -70,6 +71,7 @@ namespace
             input.aimStrength = controls.aim;
             input.aimYaw = controls.aimYaw;
             input.pushStrength = controls.push;
+            input.tired = controls.tired;
             last = StepSki(state, input, settings);
             yaw = last.yaw;
             return last;
@@ -933,4 +935,58 @@ TEST_CASE("a mouse-button skating stride edges lightly and lets go quickly, so t
     Skier carver;  // a click that isn't a stride (stick not pushed) still builds full edge
     carver.Run(0.6F, kFlat, { .edge = 1.0F, .buttons = true });
     CHECK(carver.state.edge > 0.9F);
+}
+
+TEST_CASE("out of stamina, edges only reach halfway and strides don't start")
+{
+    Skier tired;
+    tired.Run(0.5F, kFlat, { .edge = 1.0F, .tired = true });
+    CHECK_NEAR(tired.state.edge, 0.5F, 1e-4F);
+
+    Skier skater;
+    skater.Step(kFlat, { .edge = 1.0F, .aim = 1.0F, .tired = true });
+    CHECK(!skater.last.skated);
+    skater.Run(0.2F, kFlat, { .aim = 1.0F, .tired = true });
+    skater.Step(kFlat, { .edge = -1.0F, .aim = 1.0F });
+    CHECK(skater.last.skated);  // stamina back, the next squeeze strides
+}
+
+TEST_CASE("carving costs stamina with the square of the edge, only on the ground at speed")
+{
+    SkiSettings settings;
+    settings.staminaPerCarveSecond = 10.0F;
+    SkiStep full;
+    full.velocity = { 0.0F, 10.0F };
+    full.edgeDegrees = settings.maxEdgeDegrees;
+    CHECK_NEAR(StaminaCost(full, true, 1.0F, settings), 10.0F, 1e-4F);
+
+    SkiStep half = full;
+    half.edgeDegrees = -settings.maxEdgeDegrees * 0.5F;
+    CHECK_NEAR(StaminaCost(half, true, 1.0F, settings), 2.5F, 1e-4F);
+
+    CHECK_NEAR(StaminaCost(full, false, 1.0F, settings), 0.0F, 1e-6F);  // in the air
+    SkiStep slow = full;
+    slow.velocity = { 0.0F, 0.5F };
+    CHECK_NEAR(StaminaCost(slow, true, 1.0F, settings), 0.0F, 1e-6F);
+
+    SkiStep striding = full;  // a skating stride's edge is paid for by the stride
+    striding.strideSeconds = 0.3F;
+    CHECK_NEAR(StaminaCost(striding, true, 1.0F, settings), 0.0F, 1e-6F);
+
+    settings.staminaPerCarveSecond = 0.0F;
+    CHECK_NEAR(StaminaCost(full, true, 1.0F, settings), 0.0F, 1e-6F);
+}
+
+TEST_CASE("each skating stride costs its stamina once")
+{
+    SkiSettings settings;
+    settings.staminaPerStride = 6.0F;
+    settings.staminaPerCarveSecond = 0.0F;
+    SkiStep stride;
+    stride.skated = true;
+    stride.strideSeconds = 0.0F;
+    CHECK_NEAR(StaminaCost(stride, true, 1.0F / 60.0F, settings), 6.0F, 1e-4F);
+    stride.skated = false;
+    stride.strideSeconds = 0.1F;
+    CHECK_NEAR(StaminaCost(stride, true, 1.0F / 60.0F, settings), 0.0F, 1e-6F);
 }

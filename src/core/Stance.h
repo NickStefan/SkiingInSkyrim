@@ -35,6 +35,14 @@ namespace SkiingInSkyrim::Core
         float skateEdgeDegrees{ 25.0F };
         float skateArmSwingDegrees{ 35.0F };
         float skateLeanDegrees{ 10.0F };
+        // Skidding: the upper body turns back toward the direction of travel by skidTwist of the angle the
+        // skis slip at, up to skidTwistMaxDegrees, while the legs stay with the skis.
+        bool  skidStance{ true };
+        float skidTwist{ 0.7F };
+        float skidTwistMaxDegrees{ 45.0F };
+        // Off the ground, after dropping this far (metres) below the highest point, the game's own falling
+        // animation takes over. 0 keeps the stance in the air.
+        float fallAnimationDropMetres{ 2.5F };
     };
 
     struct StanceAngles
@@ -101,6 +109,11 @@ namespace SkiingInSkyrim::Core
     };
     // pushSeconds: how long a full push lasts. A push cut short goes straight into bringing the leg back.
     [[nodiscard]] SkatePose SkateAt(const StanceSettings& settings, const SkateStrides& strides, float pushSeconds) noexcept;
+
+    // Radians the upper body turns (positive to the right) for skis slipping at slipRadians (the direction of
+    // travel's angle from the skis, positive to the right). Fades out for skis pointing well over 90 degrees
+    // from the travel (going backwards), where which way to turn flips.
+    [[nodiscard]] float SkidTwist(const StanceSettings& settings, float slipRadians) noexcept;
 
     [[nodiscard]] Leg SolveLeg(Vec3 hip, Vec3 ankleTarget, float thighLength, float shinLength, Vec3 bendToward) noexcept;
 }

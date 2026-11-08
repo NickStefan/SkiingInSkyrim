@@ -109,6 +109,14 @@ namespace SkiingInSkyrim::Settings
                 3.0F, "%.2f" },
         };
 
+        constexpr FloatField kStaminaFields[] = {
+            { "PerCarveSecond", "Carving stamina", "Stamina per second holding a full edge while carving; light edges "
+                                                   "cost far less. Out of stamina, edges only reach halfway. 0 is off.",
+                &S::staminaPerCarveSecond, 0.0F, 40.0F, "%.1f" },
+            { "PerStride", "Skating stamina", "Stamina per skating stride. Out of stamina, you can't skate. 0 is off.",
+                &S::staminaPerStride, 0.0F, 30.0F, "%.1f" },
+        };
+
         constexpr BoolField kPhysicsSwitches[] = {
             { "Powder", "Powder", "Deep snow everywhere: slower, skids and stops bite harder, landings are softer "
                                   "(see the Powder sliders).",
@@ -179,6 +187,23 @@ namespace SkiingInSkyrim::Settings
                 &T::skateArmSwingDegrees, 0.0F, 90.0F, "%.0f" },
             { "SkateLeanDegrees", "Skate: torso", "Degrees of torso lean added while skating.", &T::skateLeanDegrees, 0.0F,
                 40.0F, "%.0f" },
+            { "SkidTwist", "Skid: upper body turn", "Skidding, the upper body turns back toward where you're going by "
+                                                    "this fraction of the angle the skis slip at, while the legs stay "
+                                                    "with the skis.",
+                &T::skidTwist, 0.0F, 1.0F, "%.2f" },
+            { "SkidTwistMaxDegrees", "Skid: max turn", "Degrees. The upper body turns no further than this from the skis.",
+                &T::skidTwistMaxDegrees, 0.0F, 90.0F, "%.0f" },
+            { "FallAnimationDropMetres", "Air: fall animation after", "Metres. Off the ground, once you've dropped this "
+                                                                     "far below the highest point, the game's own "
+                                                                     "falling animation (or OAR's) takes over. 0 keeps "
+                                                                     "the ski stance in the air.",
+                &T::fallAnimationDropMetres, 0.0F, 20.0F, "%.1f" },
+        };
+
+        constexpr StanceSwitch kStanceSwitches[] = {
+            { "SkidStance", "Skid stance", "Skidding, the upper body faces where you're going while the skis turn across "
+                                           "it (see the Skid sliders).",
+                &T::skidStance },
         };
 
         struct BindingInfo
@@ -325,8 +350,10 @@ namespace SkiingInSkyrim::Settings
 
     std::span<const FloatField>  PhysicsFields() noexcept { return kPhysicsFields; }
     std::span<const BoolField>   PhysicsSwitches() noexcept { return kPhysicsSwitches; }
+    std::span<const FloatField>  StaminaFields() noexcept { return kStaminaFields; }
     std::span<const CameraField> CameraFields() noexcept { return kCameraFields; }
     std::span<const StanceField> StanceFields() noexcept { return kStanceFields; }
+    std::span<const StanceSwitch> StanceSwitches() noexcept { return kStanceSwitches; }
 
     void Load()
     {
@@ -365,6 +392,11 @@ namespace SkiingInSkyrim::Settings
                     loaded.physics.*field.member = *value != 0;
                 }
             }
+            for (const auto& field : kStaminaFields) {
+                if (const auto value = ini.GetFloat("Stamina", field.key)) {
+                    loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
+                }
+            }
             if (const auto value = ini.GetInt("Camera", "FollowTravel")) {
                 loaded.camera.enabled = *value != 0;
             }
@@ -385,6 +417,11 @@ namespace SkiingInSkyrim::Settings
             for (const auto& field : kStanceFields) {
                 if (const auto value = ini.GetFloat("Stance", field.key)) {
                     loaded.stance.*field.member = std::clamp(*value, field.min, field.max);
+                }
+            }
+            for (const auto& field : kStanceSwitches) {
+                if (const auto value = ini.GetInt("Stance", field.key)) {
+                    loaded.stance.*field.member = *value != 0;
                 }
             }
             spdlog::info("settings loaded from {}", kPath);
@@ -425,6 +462,10 @@ namespace SkiingInSkyrim::Settings
         text += fmt::format("LookSteersKeyboardMouse = {}\n", state.lookSteersKeyboardMouse ? 1 : 0);
         text += "; Looking around with the right stick moves where the left stick steers (1 on, 0 off).\n";
         text += fmt::format("LookSteersGamepad = {}\n", state.lookSteersGamepad ? 1 : 0);
+        text += "\n[Stamina]\n";
+        for (const auto& field : kStaminaFields) {
+            text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.physics.*field.member);
+        }
         text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
@@ -434,6 +475,9 @@ namespace SkiingInSkyrim::Settings
         text += "[Stance]\n";
         text += "; Pose the body like a skier while skiing (1 on, 0 off: the game's own animation shows).\n";
         text += fmt::format("Enabled = {}\n", state.stanceEnabled ? 1 : 0);
+        for (const auto& field : kStanceSwitches) {
+            text += fmt::format("; {} (1 on, 0 off)\n{} = {}\n", field.help, field.key, state.stance.*field.member ? 1 : 0);
+        }
         for (const auto& field : kStanceFields) {
             text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.stance.*field.member);
         }

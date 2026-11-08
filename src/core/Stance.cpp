@@ -17,6 +17,9 @@ namespace SkiingInSkyrim::Core
         // without another stride.
         constexpr float kRecoverSeconds = 0.3F;
         constexpr float kSkateHoldSeconds = 0.8F;
+        // The skid twist is full up to this slip angle and gone by kSkidTwistGoneRadians.
+        constexpr float kSkidTwistFullRadians = 90.0F * kRadians;
+        constexpr float kSkidTwistGoneRadians = 120.0F * kRadians;
 
         float Smoothstep(float x)
         {
@@ -65,6 +68,19 @@ namespace SkiingInSkyrim::Core
             .hips = std::clamp(hips, -kMaxLeanRadians, kMaxLeanRadians),
             .upper = std::clamp(lean * (1.0F - settings.upperBodyUpright), -kMaxLeanRadians, kMaxLeanRadians),
         };
+    }
+
+    float SkidTwist(const StanceSettings& settings, float slipRadians) noexcept
+    {
+        if (!settings.skidStance) {
+            return 0.0F;
+        }
+        const float slip = std::remainder(slipRadians, 2.0F * std::numbers::pi_v<float>);
+        const float limit = settings.skidTwistMaxDegrees * kRadians;
+        const float twist = std::clamp(slip * settings.skidTwist, -limit, limit);
+        const float fade = 1.0F - Smoothstep((std::fabs(slip) - kSkidTwistFullRadians) /
+                                             (kSkidTwistGoneRadians - kSkidTwistFullRadians));
+        return twist * fade;
     }
 
     SkatePose SkateAt(const StanceSettings& settings, const SkateStrides& strides, float pushSeconds) noexcept

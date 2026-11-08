@@ -47,6 +47,19 @@ namespace SkiingInSkyrim::Skiing
         constexpr float kTurnSmoothingSeconds = 0.2F;
         float           g_turnAcceleration = 0.0F;
 
+        // The slip angle, smoothed the same way, and only trusted with real speed: slower than
+        // kSlipStartSpeed (m/s) the direction of travel is noise.
+        constexpr float kSlipSmoothingSeconds = 0.15F;
+        constexpr float kSlipStartSpeed = 0.5F;
+        constexpr float kSlipFullSpeed = 2.0F;
+        float           g_slip = 0.0F;
+
+        // Off the ground: the highest the player has been since leaving it.
+        std::optional<float> g_airPeak;
+
+        // Out of stamina; logged when it changes.
+        bool g_tired = false;
+
         void SetOverlay(const OverlayData& overlay)
         {
             std::scoped_lock lock(g_overlayLock);
@@ -348,6 +361,8 @@ namespace SkiingInSkyrim::Skiing
             g_stick = {};
             g_height.agreeing = 0;
             g_sinceStride = kSkatingShownSeconds;
+            g_slip = 0.0F;
+            g_airPeak.reset();
         }
         const auto& ground = g_ground.Update({
             .supported = controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported,
@@ -377,14 +392,34 @@ namespace SkiingInSkyrim::Skiing
         ReadControls(input, Camera::ViewYaw(player), Camera::ChaseYaw(player), delta, physics);
         input.hasObserved = !starting;
         input.observed = observed;
+        auto*      values = player->AsActorValueOwner();
+        const bool staminaCosts = physics.staminaPerCarveSecond > 0.0F || physics.staminaPerStride > 0.0F;
+        input.tired = staminaCosts && values->GetActorValue(RE::ActorValue::kStamina) < 1.0F;
+        if (input.tired != g_tired) {
+            g_tired = input.tired;
+            spdlog::info(g_tired ? "out of stamina: edges limited, no skating" : "stamina back");
+        }
         const auto step = Core::StepSki(g_debug.ski, input, physics);
         g_sinceStride = step.skated ? 0.0F : g_sinceStride + delta;
+        if (const float cost = Core::StaminaCost(step, grounded, delta, physics); cost > 0.0F) {
+            values->DamageActorValue(RE::ActorValue::kStamina, cost);
+        }
 
         SetYaw(player, step.yaw);
         Skis::Sync(player, skis);
         Pose::Prepare(player);
         const float turnBlend = starting ? 1.0F : 1.0F - std::exp(-std::max(0.0F, delta) / kTurnSmoothingSeconds);
         g_turnAcceleration += (step.turnAcceleration - g_turnAcceleration) * turnBlend;
+        const float slipSpeed = std::clamp((Core::Length(step.velocity) - kSlipStartSpeed) / (kSlipFullSpeed - kSlipStartSpeed),
+            0.0F, 1.0F);
+        const float slipBlend = starting ? 1.0F : 1.0F - std::exp(-std::max(0.0F, delta) / kSlipSmoothingSeconds);
+        g_slip += (step.slipDegrees * std::numbers::pi_v<float> / 180.0F * slipSpeed - g_slip) * slipBlend;
+        if (grounded) {
+            g_airPeak.reset();
+        } else {
+            g_airPeak = std::max(g_airPeak.value_or(position.z), position.z);
+        }
+        const float airDrop = g_airPeak ? (*g_airPeak - position.z) / kUnitsPerMetre : 0.0F;
         SetBody({
             .active = true,
             .tuck = step.tuck,
@@ -394,6 +429,8 @@ namespace SkiingInSkyrim::Skiing
             .gravity = physics.gravity,
             .strideSide = step.strideSide,
             .strideSeconds = step.strideSeconds,
+            .slipRadians = g_slip,
+            .airDropMetres = airDrop,
             .groundNormal = grounded && ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F },
             .skis = skis,
         });

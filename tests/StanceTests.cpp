@@ -186,3 +186,23 @@ TEST_CASE("a target out of reach straightens the leg toward it and says how far 
     CHECK_NEAR(leg.excess, 100.0F - 58.0F * 0.999F, 1e-3F);
     CHECK(leg.ankle.z > 41.0F);
 }
+
+TEST_CASE("skidding turns the upper body toward the travel by a share of the slip, up to the limit")
+{
+    StanceSettings settings;
+    settings.skidTwist = 0.5F;
+    settings.skidTwistMaxDegrees = 30.0F;
+    CHECK_NEAR(SkidTwist(settings, 20.0F * kDegrees), 10.0F * kDegrees, 1e-5F);
+    CHECK_NEAR(SkidTwist(settings, -20.0F * kDegrees), -10.0F * kDegrees, 1e-5F);
+    CHECK_NEAR(SkidTwist(settings, 80.0F * kDegrees), 30.0F * kDegrees, 1e-5F);
+    CHECK_NEAR(SkidTwist(settings, 0.0F), 0.0F, 1e-6F);
+}
+
+TEST_CASE("the skid twist fades going backwards, and is off with the skid stance off")
+{
+    StanceSettings settings;
+    CHECK_NEAR(SkidTwist(settings, 150.0F * kDegrees), 0.0F, 1e-6F);
+    CHECK(std::fabs(SkidTwist(settings, 105.0F * kDegrees)) < std::fabs(SkidTwist(settings, 85.0F * kDegrees)));
+    settings.skidStance = false;
+    CHECK_NEAR(SkidTwist(settings, 30.0F * kDegrees), 0.0F, 1e-6F);
+}

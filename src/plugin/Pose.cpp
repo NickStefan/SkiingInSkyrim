@@ -76,6 +76,9 @@ namespace SkiingInSkyrim::Pose
         // and how much of the upper body's the neck keeps, holding the head nearer level.
         constexpr float kSpineRoll[3] = { 0.5F, 0.8F, 1.0F };
         constexpr float kNeckRoll = 0.5F;
+        // Share of the skid twist each bone turns by, relative to the character; the chest and above take it all.
+        constexpr float kPelvisTwist = 0.25F;
+        constexpr float kSpineTwist[3] = { 0.45F, 0.75F, 1.0F };
 
         // Seconds to blend the stance in as skiing starts and out as it stops.
         constexpr float kBlendSeconds = 0.3F;
@@ -111,11 +114,14 @@ namespace SkiingInSkyrim::Pose
 
         const RE::NiPoint3 kRight{ 1.0F, 0.0F, 0.0F };
         const RE::NiPoint3 kForward{ 0.0F, 1.0F, 0.0F };
+        const RE::NiPoint3 kUp{ 0.0F, 0.0F, 1.0F };
 
         // Positive swings a bone pointing down forward, and tips one pointing up back.
         RE::NiMatrix3 Pitch(float radians) { return Skeleton::AxisAngle(kRight, radians); }
         // Positive leans the top to the right.
         RE::NiMatrix3 Roll(float radians) { return Skeleton::AxisAngle(kForward, radians); }
+        // Positive turns the front to the right.
+        RE::NiMatrix3 Twist(float radians) { return Skeleton::AxisAngle(kUp, -radians); }
 
         RE::NiPoint3 ToPoint(const Core::Vec3& v) { return { v.x, v.y, v.z }; }
         Core::Vec3   ToVec(const RE::NiPoint3& p) { return { p.x, p.y, p.z }; }
@@ -253,7 +259,9 @@ namespace SkiingInSkyrim::Pose
         // Poses the body; returns where it put the skis (relative to the character) if it did.
         std::optional<std::array<Core::SkiPose, 2>> Apply(RE::PlayerCharacter* player, const Skiing::Body& body, float delta)
         {
-            const float target = body.active && Settings::StanceEnabled() ? 1.0F : 0.0F;
+            const float fallDrop = Settings::Stance().fallAnimationDropMetres;
+            const bool  falling = fallDrop > 0.0F && body.airDropMetres >= fallDrop;
+            const float target = body.active && Settings::StanceEnabled() && !falling ? 1.0F : 0.0F;
             g_weight = Approach(g_weight, target, std::max(0.0F, delta) / kBlendSeconds);
             if (g_weight <= 0.0F) {
                 g_live = {};
@@ -283,6 +291,7 @@ namespace SkiingInSkyrim::Pose
             // Skating, the edges are the strides', not a turn's.
             const float edge = body.edgeRadians * (1.0F - sk);
             const auto  turn = Core::LeanFor(settings, body.turnAcceleration, body.gravity, edge);
+            const float twist = Core::SkidTwist(settings, body.slipRadians) * (1.0F - sk);
             const float w = g_weight;
             auto        bone = [&](Bone b) -> RE::NiAVObject& { return *g_live.bones[b]; };
 
@@ -317,7 +326,8 @@ namespace SkiingInSkyrim::Pose
             RE::NiPoint3 hips = standing[kCom].translate + RE::NiPoint3{ overSki, shift.forward, shift.up };
             hips = pivot + hipsRoll * (hips - pivot);
             Set(bone(kCom), character, hipsRoll * standing[kCom].rotate, &hips, w);
-            Set(bone(kPelvis), character, hipsRoll * Pitch(-angles.torso * kPelvisLean) * standing[kPelvis].rotate, nullptr, w);
+            Set(bone(kPelvis), character,
+                Twist(twist * kPelvisTwist) * hipsRoll * Pitch(-angles.torso * kPelvisLean) * standing[kPelvis].rotate, nullptr, w);
 
             // Legs: each reaches its own ski, the knees bending forward. If either can't, the hips come down.
             auto solve = [&](int side) {
@@ -345,13 +355,16 @@ namespace SkiingInSkyrim::Pose
             const Bone spine[3] = { kSpine, kSpine1, kSpine2 };
             for (int i = 0; i < 3; ++i) {
                 const auto roll = Roll(turn.hips + (turn.upper - turn.hips) * kSpineRoll[i]);
-                Set(bone(spine[i]), character, roll * Pitch(-angles.torso * kSpineLean[i]) * standing[spine[i]].rotate, nullptr, w);
+                Set(bone(spine[i]), character,
+                    Twist(twist * kSpineTwist[i]) * roll * Pitch(-angles.torso * kSpineLean[i]) * standing[spine[i]].rotate,
+                    nullptr, w);
             }
-            Set(bone(kNeck), character, Roll(turn.upper * kNeckRoll) * Pitch(-angles.torso * kNeckLean) * standing[kNeck].rotate,
-                nullptr, w);
+            Set(bone(kNeck), character,
+                Twist(twist) * Roll(turn.upper * kNeckRoll) * Pitch(-angles.torso * kNeckLean) * standing[kNeck].rotate, nullptr,
+                w);
 
-            // Arms: aimed at directions relative to the leaning torso, whatever pose the skeleton stands in.
-            const auto lean = Roll(turn.upper) * Pitch(-angles.torso);
+            // Arms: aimed at directions relative to the leaning, turned torso, whatever pose the skeleton stands in.
+            const auto lean = Twist(twist) * Roll(turn.upper) * Pitch(-angles.torso);
             for (int side = 0; side < 2; ++side) {
                 const float        outward = side == 0 ? -1.0F : 1.0F;
                 const RE::NiPoint3 hanging{ outward * std::sin(angles.armOut), 0.0F, -std::cos(angles.armOut) };

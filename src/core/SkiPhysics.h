@@ -88,6 +88,13 @@ namespace SkiingInSkyrim::Core
         // Slow side-slips (falling leaf) are left alone. 0 turns it off.
         float selfAlignDegreesPerSecond{ 45.0F };
 
+        // Stamina: holding an edge while carving on the ground costs up to staminaPerCarveSecond (at full edge,
+        // growing with the square of the edge, so light edging is nearly free), and each skating stride costs
+        // staminaPerStride. 0 turns either off. Out of stamina, edges reach only part of the way and strides
+        // don't start.
+        float staminaPerCarveSecond{ 10.0F };
+        float staminaPerStride{ 6.0F };
+
         // Side-slipping (sliding slowly and mostly sideways), the edge's grip is measured against the slope:
         // no edge slides on flat skis, full edge holds you, and the trigger travel in between feathers the
         // slip on any slope.
@@ -136,6 +143,7 @@ namespace SkiingInSkyrim::Core
         float pushStrength{ 0.0F };
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention
+        bool  tired{ false };              // out of stamina: weaker edges, no skating strides
     };
 
     struct SkiState
@@ -184,6 +192,11 @@ namespace SkiingInSkyrim::Core
     [[nodiscard]] float AimStrength(float stickX, float stickY, float deadzone) noexcept;
 
     SkiStep StepSki(SkiState& state, const SkiInput& input, const SkiSettings& settings = {}) noexcept;
+
+    // Stamina a step cost (see staminaPerCarveSecond). Carving is free while a skating stride is under way:
+    // the stride already paid for its edge.
+    [[nodiscard]] float StaminaCost(const SkiStep& step, bool grounded, float deltaSeconds,
+        const SkiSettings& settings = {}) noexcept;
 
     // Metres of free fall that would land as hard as meeting a slope with the given normal at this velocity
     // (m/s): only the speed into the slope counts, so landing along it is soft whatever the drop.

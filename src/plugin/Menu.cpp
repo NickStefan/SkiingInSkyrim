@@ -148,6 +148,18 @@ namespace SkiingInSkyrim::Menu
                                            "turns the skis while the left is pushed. Off, it steers relative to the "
                                            "chase camera and the right stick only looks around.");
             }
+            auto physics = Settings::Physics();
+            for (const auto& field : Settings::StaminaFields()) {
+                if (ImGuiMCP::SliderFloat(field.label, &(physics.*field.member), field.min, field.max, field.format)) {
+                    Settings::SetPhysics(physics);
+                }
+                if (ImGuiMCP::IsItemDeactivatedAfterEdit()) {
+                    Settings::Save();
+                }
+                if (ImGuiMCP::IsItemHovered()) {
+                    ImGuiMCP::SetTooltip("%s", field.help);
+                }
+            }
             bool overlay = Settings::ShowOverlay();
             if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {
                 Settings::SetShowOverlay(overlay);
@@ -254,6 +266,15 @@ namespace SkiingInSkyrim::Menu
             ImGuiMCP::SeparatorText("Body");
             auto stance = Settings::Stance();
             bool stanceChanged = false;
+            for (const auto& field : Settings::StanceSwitches()) {
+                if (ImGuiMCP::Checkbox(field.label, &(stance.*field.member))) {
+                    stanceChanged = true;
+                    finished = true;
+                }
+                if (ImGuiMCP::IsItemHovered()) {
+                    ImGuiMCP::SetTooltip("%s", field.help);
+                }
+            }
             for (const auto& field : Settings::StanceFields()) {
                 stanceChanged |= ImGuiMCP::SliderFloat(field.label, &(stance.*field.member), field.min, field.max,
                     field.format);
@@ -268,7 +289,11 @@ namespace SkiingInSkyrim::Menu
 
             ImGuiMCP::Spacing();
             if (ImGuiMCP::Button("Reset to defaults")) {
-                Settings::SetPhysics({});
+                Core::SkiSettings defaults;
+                for (const auto& field : Settings::StaminaFields()) {
+                    defaults.*field.member = physics.*field.member;
+                }
+                Settings::SetPhysics(defaults);
                 Settings::SetCamera({ .enabled = Settings::Camera().enabled });
                 Settings::SetStance({});
                 finished = true;

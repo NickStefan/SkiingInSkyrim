@@ -74,6 +74,14 @@ namespace SkiingInSkyrim::Core
         constexpr float kSkateAimStrength = 0.3F;
         constexpr float kSkateAimDegrees = 45.0F;
 
+        // Out of stamina, edges reach this fraction of full.
+        constexpr float kTiredEdge = 0.5F;
+        // Carving costs nothing below kCarveCostStartSpeed (m/s), all of it from kCarveCostFullSpeed, and
+        // nothing for this long after a skating stride starts.
+        constexpr float kCarveCostStartSpeed = 1.0F;
+        constexpr float kCarveCostFullSpeed = 3.0F;
+        constexpr float kStrideCarveFreeSeconds = 1.0F;
+
         // Tucking: how firm a push and how close to where the skis point (cosine of the angle). Getting into
         // a tuck takes a push straight ahead; once in, steering within the wider hold window keeps it.
         constexpr float kTuckStartStrength = 0.5F;
@@ -262,13 +270,26 @@ namespace SkiingInSkyrim::Core
         return t * t;
     }
 
+    float StaminaCost(const SkiStep& step, bool grounded, float deltaSeconds, const SkiSettings& settings) noexcept
+    {
+        float       cost = step.skated ? std::max(0.0F, settings.staminaPerStride) : 0.0F;
+        const bool  striding = step.strideSeconds >= 0.0F && step.strideSeconds < kStrideCarveFreeSeconds;
+        if (grounded && !striding && settings.maxEdgeDegrees > 0.0F && settings.staminaPerCarveSecond > 0.0F) {
+            const float edge = std::min(1.0F, std::fabs(step.edgeDegrees) / settings.maxEdgeDegrees);
+            const float moving = Smoothstep(kCarveCostStartSpeed, kCarveCostFullSpeed, Length(step.velocity));
+            cost += settings.staminaPerCarveSecond * edge * edge * moving * std::max(0.0F, deltaSeconds);
+        }
+        return cost;
+    }
+
     SkiStep StepSki(SkiState& state, const SkiInput& input, const SkiSettings& settings) noexcept
     {
         const float dt = std::max(0.0F, input.deltaSeconds);
         SkiStep result;
         const Vec2 velocityBefore = state.velocity;
 
-        const float edgeTarget = std::clamp(input.edgeTarget, -1.0F, 1.0F);
+        const float edgeLimit = input.tired ? kTiredEdge : 1.0F;
+        const float edgeTarget = std::clamp(input.edgeTarget, -edgeLimit, edgeLimit);
         const bool  skateEdge = input.edgeFromButtons && state.skateEdging;
         const float edgeRate = !input.edgeFromButtons || skateEdge ? settings.triggerEdgeRamp :
                                edgeTarget != 0.0F                  ? settings.buttonEdgeRamp :
@@ -362,7 +383,7 @@ namespace SkiingInSkyrim::Core
         // Skating: a fresh squeeze of a trigger with the stick pushed forward on gentle ground is a stride.
         const bool squeezed = std::fabs(edgeTarget) >= kSkateSqueeze && std::fabs(state.lastEdgeTarget) < kSkateSqueeze;
         state.lastEdgeTarget = edgeTarget;
-        if (squeezed && input.grounded && !input.skidHeld && aimStrength >= kSkateAimStrength &&
+        if (squeezed && input.grounded && !input.skidHeld && !input.tired && aimStrength >= kSkateAimStrength &&
             std::cos(input.aimYaw - yaw) >= std::cos(kSkateAimDegrees * kRadians) && settings.skateMaxSpeed > 0.0F) {
             const auto  n = input.hasNormal ? input.normal : Vec3{ 0.0F, 0.0F, 1.0F };
             const float speedNow = Length(velocity);
