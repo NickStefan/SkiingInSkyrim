@@ -82,7 +82,7 @@ namespace SkiingInSkyrim::Core
         float skateImpulse{ 1.0F };
         float skatePushSeconds{ 0.35F };
         float skateMaxSpeed{ 6.0F };
-        float skateMaxSlopeDegrees{ 10.0F };
+        float skateMaxSlopeDegrees{ 15.0F };
         // With the stick centred, no edge and no skid, flat skis sliding faster than a side-slip swing round
         // toward the direction of travel at up to this rate, so a sideways smear doesn't go on forever.
         // Slow side-slips (falling leaf) are left alone. 0 turns it off.

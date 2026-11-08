@@ -19,14 +19,16 @@ namespace SkiingInSkyrim::Skis
     // Main thread. The skis the player wears, if any.
     [[nodiscard]] RE::TESObjectARMO* Worn(RE::PlayerCharacter* player);
 
-    // Main thread: loads the skis' model, when they change.
-    void Prepare(RE::TESObjectARMO* skis);
+    // Main thread, every frame: while skiing on these skis, loads their model when they change and keeps it
+    // attached to the character; not skiing (nullptr), takes it off. Changes to what hangs off the character
+    // happen only here, where the game makes its own.
+    void Sync(RE::PlayerCharacter* player, RE::TESObjectARMO* skis);
 
     // Half a ski's width, game units: how far an edged ski is lifted onto its edge.
     inline constexpr float kHalfWidth = 5.0F;
 
-    // Animation thread, after the body is posed: draws the skis under the feet while skiing, and takes them
-    // away otherwise. The skis go where posed says (left, right; relative to the character) if given,
+    // Animation thread, after the body is posed: sets where the attached skis sit, relative to the character;
+    // the game works out where that is in the world later in the frame. The skis go where posed says (left, right; relative to the character) if given,
     // otherwise under the feet wherever the animation put them.
     void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta,
         const std::array<Core::SkiPose, 2>* posed);

@@ -102,6 +102,23 @@ TEST_CASE("solving the leg for the shifted hips gives back the stance's angles")
     CHECK_NEAR(thigh + shin + shift.up - leg.knee.z, thigh * std::cos(hipAngle), 1e-3F);
 }
 
+namespace
+{
+    // One stride on side at seconds, the other leg idle.
+    SkateStrides Stride(float side, float seconds)
+    {
+        SkateStrides strides;
+        strides.side = side;
+        strides.seconds[side > 0.0F ? 1 : 0] = seconds;
+        return strides;
+    }
+
+    SkatePose SkateAt(const StanceSettings& settings, float side, float seconds, float push)
+    {
+        return SkiingInSkyrim::Core::SkateAt(settings, Stride(side, seconds), push);
+    }
+}
+
 TEST_CASE("a skating stride pushes its ski out, lifts it back, and moves the weight across")
 {
     const StanceSettings settings;
@@ -136,6 +153,31 @@ TEST_CASE("a skating stride pushes its ski out, lifts it back, and moves the wei
     const auto left = SkateAt(settings, -1.0F, 0.0F, push);
     CHECK_NEAR(left.hipsOver, -1.0F, 1e-5F);
     CHECK_NEAR(left.armSwing, 1.0F, 1e-5F);
+}
+
+TEST_CASE("a push cut short by the other leg's stride brings its ski back from where it got to")
+{
+    const StanceSettings settings;
+    const float push = 0.35F;
+    SkateStrides strides;
+    strides.side = -1.0F;  // the left leg has just started, 0.15 s into the right's push
+    strides.seconds[1] = 0.15F;
+    strides.cut[1] = 0.15F;
+    strides.seconds[0] = 0.0F;
+    const auto cut = SkiingInSkyrim::Core::SkateAt(settings, strides, push);
+    const auto before = SkateAt(settings, 1.0F, 0.15F - 1e-4F, push);
+    CHECK_NEAR(cut.legs[1].out, before.legs[1].out, 0.05F);  // no jump
+    CHECK(cut.legs[1].out > 0.0F);
+
+    strides.seconds[1] = 0.3F;  // on its way back: lifted, coming in
+    strides.seconds[0] = 0.15F;
+    const auto back = SkiingInSkyrim::Core::SkateAt(settings, strides, push);
+    CHECK(back.legs[1].lift > 0.0F);
+    CHECK(back.legs[1].out < cut.legs[1].out);
+    CHECK(back.legs[0].out > 0.0F);  // while the left pushes out
+
+    strides.seconds[1] = 0.15F + 0.31F;  // home
+    CHECK_NEAR(SkiingInSkyrim::Core::SkateAt(settings, strides, push).legs[1].out, 0.0F, 1e-6F);
 }
 
 TEST_CASE("a target out of reach straightens the leg toward it and says how far short")

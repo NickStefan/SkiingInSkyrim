@@ -175,6 +175,80 @@ namespace SkiingInSkyrim::Pose
             return target > value ? std::min(target, value + step) : std::max(target, value - step);
         }
 
+        // Skating: each leg's stride clock, and what's left to glide away of a jump in the pose when a new
+        // stride starts before the last one has played out.
+        constexpr std::size_t kSkateChannels = 8;
+        constexpr float       kSwitchBlendSeconds = 0.15F;
+        struct SkateTrack
+        {
+            float                                side{ 0.0F };
+            float                                lastSeconds{ -1.0F };
+            Core::SkateStrides                   strides;
+            std::array<float, kSkateChannels>    shown{};
+            std::array<float, kSkateChannels>    offset{};
+            float                                sinceSwitch{ 1e9F };
+        };
+        SkateTrack g_track;
+
+        std::array<float, kSkateChannels> Pack(const Core::SkatePose& pose)
+        {
+            const auto& [left, right] = pose.legs;
+            return { left.out, left.lift, left.edge, right.out, right.lift, right.edge, pose.hipsOver, pose.armSwing };
+        }
+
+        void Unpack(const std::array<float, kSkateChannels>& values, Core::SkatePose& pose)
+        {
+            auto& [left, right] = pose.legs;
+            left = { values[0], values[1], values[2] };
+            right = { values[3], values[4], values[5] };
+            pose.hipsOver = values[6];
+            pose.armSwing = values[7];
+        }
+
+        Core::SkatePose TrackSkate(const Skiing::Body& body, const Core::StanceSettings& settings, float pushSeconds, float delta)
+        {
+            auto& track = g_track;
+            if (body.strideSide == 0.0F || body.strideSeconds < 0.0F) {
+                track = {};
+                return {};
+            }
+            const bool fresh = body.strideSide != track.side || body.strideSeconds < track.lastSeconds;
+            track.side = body.strideSide;
+            track.lastSeconds = body.strideSeconds;
+
+            auto&     strides = track.strides;
+            const int leg = body.strideSide > 0.0F ? 1 : 0;
+            const int other = 1 - leg;
+            if (strides.seconds[other] >= 0.0F) {
+                strides.seconds[other] += delta;
+            }
+            if (fresh) {
+                if (strides.seconds[other] >= 0.0F && strides.seconds[other] < std::min(pushSeconds, strides.cut[other])) {
+                    strides.cut[other] = strides.seconds[other];
+                }
+                strides.cut[leg] = 1e9F;
+            }
+            strides.seconds[leg] = body.strideSeconds;
+            strides.side = body.strideSide;
+
+            auto       pose = Core::SkateAt(settings, strides, pushSeconds);
+            const auto target = Pack(pose);
+            if (fresh) {
+                for (std::size_t i = 0; i < kSkateChannels; ++i) {
+                    track.offset[i] = track.shown[i] - target[i];
+                }
+                track.sinceSwitch = 0.0F;
+            }
+            const float t = std::clamp(track.sinceSwitch / kSwitchBlendSeconds, 0.0F, 1.0F);
+            const float remaining = 1.0F - t * t * (3.0F - 2.0F * t);
+            for (std::size_t i = 0; i < kSkateChannels; ++i) {
+                track.shown[i] = target[i] + track.offset[i] * remaining;
+            }
+            track.sinceSwitch += delta;
+            Unpack(track.shown, pose);
+            return pose;
+        }
+
         // Poses the body; returns where it put the skis (relative to the character) if it did.
         std::optional<std::array<Core::SkiPose, 2>> Apply(RE::PlayerCharacter* player, const Skiing::Body& body, float delta)
         {
@@ -196,7 +270,7 @@ namespace SkiingInSkyrim::Pose
             }
             const auto& standing = g_standing.pose;
             const auto  settings = Settings::Stance();
-            const auto  skate = Core::SkateAt(settings, body.strideSide, body.strideSeconds, Settings::Physics().skatePushSeconds);
+            const auto  skate = TrackSkate(body, settings, Settings::Physics().skatePushSeconds, std::max(0.0F, delta));
             g_skate = Approach(g_skate, skate.active ? 1.0F : 0.0F, std::max(0.0F, delta) / kSkateBlendSeconds);
             const float sk = g_skate;
             auto        angles = Core::Stance(settings, body.tuck);

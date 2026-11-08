@@ -67,29 +67,41 @@ namespace SkiingInSkyrim::Core
         };
     }
 
-    SkatePose SkateAt(const StanceSettings& settings, float side, float seconds, float pushSeconds) noexcept
+    SkatePose SkateAt(const StanceSettings& settings, const SkateStrides& strides, float pushSeconds) noexcept
     {
-        SkatePose pose;
+        SkatePose   pose;
         const float push = std::max(pushSeconds, 1e-3F);
-        if (side == 0.0F || seconds < 0.0F || seconds >= push + kRecoverSeconds + kSkateHoldSeconds) {
+        const int   latest = strides.side > 0.0F ? 1 : 0;
+        const float seconds = strides.seconds[latest];
+        if (strides.side == 0.0F || seconds < 0.0F || seconds >= push + kRecoverSeconds + kSkateHoldSeconds) {
             return pose;
         }
         pose.active = true;
-        const int   leg = side > 0.0F ? 1 : 0;
-        const float s = side > 0.0F ? 1.0F : -1.0F;
+
         const float edge = settings.skateEdgeDegrees * kRadians;
-        const float pushed = Smoothstep(seconds / push);
-        auto&       pushing = pose.legs[leg];
-        if (seconds < push) {
-            pushing.out = settings.skatePushOut * pushed;
-            pushing.edge = edge * Smoothstep(seconds / (push * 0.3F));
-        } else {
-            const float back = std::min(1.0F, (seconds - push) / kRecoverSeconds);
-            pushing.out = settings.skatePushOut * (1.0F - Smoothstep(back));
-            pushing.lift = settings.skateLift * std::sin(std::numbers::pi_v<float> * back);
-            pushing.edge = edge * (1.0F - back);
+        for (int leg = 0; leg < 2; ++leg) {
+            const float t = strides.seconds[leg];
+            const float pushEnds = std::min(push, strides.cut[leg]);
+            if (t < 0.0F || t >= pushEnds + kRecoverSeconds) {
+                continue;
+            }
+            auto&       legPose = pose.legs[leg];
+            const float pushOut = settings.skatePushOut * Smoothstep(std::min(t, pushEnds) / push);
+            const float pushEdge = edge * Smoothstep(std::min(t, pushEnds) / (push * 0.3F));
+            if (t < pushEnds) {
+                legPose.out = pushOut;
+                legPose.edge = pushEdge;
+            } else {
+                const float back = (t - pushEnds) / kRecoverSeconds;
+                legPose.out = pushOut * (1.0F - Smoothstep(back));
+                legPose.lift = settings.skateLift * std::sin(std::numbers::pi_v<float> * back);
+                legPose.edge = pushEdge * (1.0F - back);
+            }
         }
+
         // The weight starts over the pushing ski (the last stride's glide, alternating) and moves across.
+        const float s = strides.side > 0.0F ? 1.0F : -1.0F;
+        const float pushed = Smoothstep(seconds / push);
         pose.hipsOver = s * (1.0F - 2.0F * pushed);
         pose.armSwing = s * (2.0F * pushed - 1.0F);
         return pose;

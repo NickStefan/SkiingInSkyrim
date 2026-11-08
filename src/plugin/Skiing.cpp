@@ -367,6 +367,7 @@ namespace SkiingInSkyrim::Skiing
             SetOverlay({ .active = false, .inactiveReason = reason });
             Camera::Reset();
             SetBody({});
+            Skis::Sync(player, nullptr);
             return;
         }
 
@@ -417,7 +418,7 @@ namespace SkiingInSkyrim::Skiing
         g_sinceStride = step.skated ? 0.0F : g_sinceStride + delta;
 
         SetYaw(player, step.yaw);
-        Skis::Prepare(skis);
+        Skis::Sync(player, skis);
         Pose::Prepare(player);
         const float turnBlend = starting ? 1.0F : 1.0F - std::exp(-std::max(0.0F, delta) / kTurnSmoothingSeconds);
         g_turnAcceleration += (step.turnAcceleration - g_turnAcceleration) * turnBlend;

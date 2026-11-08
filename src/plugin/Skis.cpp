@@ -37,10 +37,12 @@ namespace SkiingInSkyrim::Skis
             float                                        scale{ 1.0F };
         };
 
+        // Attached and detached on the main thread; posed on the animation thread.
         struct Placed
         {
             Model                                        model;
-            RE::NiNode*                                  attachedTo{ nullptr };
+            RE::NiPointer<RE::NiNode>                    attachedTo;  // held, so detaching from old 3D is safe
+            bool                                         shown{ false };  // hidden until first posed
             std::array<RE::NiPointer<RE::NiAVObject>, 2> feet;
             std::array<float, 2>                         stance{ -kStanceDefault, kStanceDefault };
             bool                                         stanceKnown{ false };
@@ -123,21 +125,23 @@ namespace SkiingInSkyrim::Skis
         void Detach(Placed& placed)
         {
             for (auto& root : placed.model.roots) {
-                if (placed.attachedTo && root->parent == placed.attachedTo) {
+                if (placed.attachedTo && root->parent == placed.attachedTo.get()) {
                     placed.attachedTo->DetachChild2(root.get());
                 }
             }
-            placed.attachedTo = nullptr;
+            placed.attachedTo.reset();
             placed.feet = {};
             placed.stanceKnown = false;
+            placed.shown = false;
         }
 
         void Attach(Placed& placed, RE::NiNode* character)
         {
             for (auto& root : placed.model.roots) {
+                root->SetAppCulled(true);
                 character->AttachChild(root.get(), true);
             }
-            placed.attachedTo = character;
+            placed.attachedTo.reset(character);
             for (std::size_t i = 0; i < 2; ++i) {
                 placed.feet[i].reset(character->GetObjectByName(kFootBones[i]));
             }
@@ -210,42 +214,47 @@ namespace SkiingInSkyrim::Skis
         return g_worn;
     }
 
-    void Prepare(RE::TESObjectARMO* skis)
+    void Sync(RE::PlayerCharacter* player, RE::TESObjectARMO* skis)
     {
         if (!skis) {
-            return;
-        }
-        {
             std::scoped_lock lock(g_lock);
-            if (g_prepared.armor == skis) {
-                return;
-            }
-        }
-        auto model = Build(skis);
-        std::scoped_lock lock(g_lock);
-        g_prepared = std::move(model);
-    }
-
-    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<Core::SkiPose, 2>* posed)
-    {
-        std::scoped_lock lock(g_lock);
-        if (!body.active || !body.skis) {
             Detach(g_placed);
             return;
         }
+        bool built = false;
+        {
+            std::scoped_lock lock(g_lock);
+            built = g_prepared.armor == skis;
+        }
+        if (!built) {
+            auto model = Build(skis);
+            std::scoped_lock lock(g_lock);
+            g_prepared = std::move(model);
+        }
+
+        std::scoped_lock lock(g_lock);
         if (g_placed.model.armor != g_prepared.armor) {
             Detach(g_placed);
             g_placed = { .model = g_prepared };
         }
         auto* character3D = player->Get3D(false);
         auto* character = character3D ? character3D->AsNode() : nullptr;
-        if (g_placed.model.armor != body.skis || g_placed.model.failed || g_placed.model.roots.empty() || !character) {
+        if (g_placed.model.failed || g_placed.model.roots.empty() || !character) {
             Detach(g_placed);
             return;
         }
-        if (g_placed.attachedTo != character || g_placed.model.roots.front()->parent != character) {
+        if (g_placed.attachedTo.get() != character || g_placed.model.roots.front()->parent != character) {
             Detach(g_placed);
             Attach(g_placed, character);
+        }
+    }
+
+    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<Core::SkiPose, 2>* posed)
+    {
+        std::scoped_lock lock(g_lock);
+        auto*            character = g_placed.attachedTo.get();
+        if (!body.active || !character || character != player->Get3D(false) || g_placed.model.armor != body.skis) {
+            return;
         }
 
         const float heading = player->data.angle.z;
@@ -267,9 +276,11 @@ namespace SkiingInSkyrim::Skis
                 g_placed.model.scale);
         }
         g_placed.stanceKnown = true;
-        RE::NiUpdateData update{};
-        for (auto& root : g_placed.model.roots) {
-            root->Update(update);
+        if (!g_placed.shown) {
+            for (auto& root : g_placed.model.roots) {
+                root->SetAppCulled(false);
+            }
+            g_placed.shown = true;
         }
     }
 }

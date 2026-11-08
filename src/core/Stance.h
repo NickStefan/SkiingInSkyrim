@@ -92,9 +92,15 @@ namespace SkiingInSkyrim::Core
         float    hipsOver{ 0.0F };  // -1 over the left ski .. +1 over the right
         float    armSwing{ 0.0F };  // -1 .. +1: positive swings the right arm back and the left forward
     };
-    // side: the stride's leg, +1 right, -1 left (0 for none); seconds since it started; pushSeconds how long
-    // the push lasts.
-    [[nodiscard]] SkatePose SkateAt(const StanceSettings& settings, float side, float seconds, float pushSeconds) noexcept;
+    // The strides so far, per leg (left, right).
+    struct SkateStrides
+    {
+        float side{ 0.0F };                     // the latest stride's leg: +1 right, -1 left, 0 none
+        float seconds[2]{ -1.0F, -1.0F };       // since each leg's latest stride started; negative for none
+        float cut[2]{ 1e9F, 1e9F };             // seconds into its stride that leg's push was cut short
+    };
+    // pushSeconds: how long a full push lasts. A push cut short goes straight into bringing the leg back.
+    [[nodiscard]] SkatePose SkateAt(const StanceSettings& settings, const SkateStrides& strides, float pushSeconds) noexcept;
 
     [[nodiscard]] Leg SolveLeg(Vec3 hip, Vec3 ankleTarget, float thighLength, float shinLength, Vec3 bendToward) noexcept;
 }
