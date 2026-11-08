@@ -111,10 +111,14 @@ namespace SkiingInSkyrim::Settings
 
         constexpr FloatField kStaminaFields[] = {
             { "PerCarveSecond", "Carving stamina", "Stamina per second holding a full edge while carving; light edges "
-                                                   "cost far less. Out of stamina, edges only reach halfway. 0 is off.",
+                                                   "cost far less. 0 is off.",
                 &S::staminaPerCarveSecond, 0.0F, 40.0F, "%.1f" },
             { "PerStride", "Skating stamina", "Stamina per skating stride. Out of stamina, you can't skate. 0 is off.",
                 &S::staminaPerStride, 0.0F, 30.0F, "%.1f" },
+            { "TiredEdgeFraction", "Out-of-stamina edge", "Out of stamina, edges reach this fraction of full: 0.5 is "
+                                                          "half, 1.0 the full edge. Does nothing with both stamina "
+                                                          "costs at 0.",
+                &S::tiredEdgeFraction, 0.0F, 1.0F, "%.2f" },
         };
 
         constexpr BoolField kPhysicsSwitches[] = {

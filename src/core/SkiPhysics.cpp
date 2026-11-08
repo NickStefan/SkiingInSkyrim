@@ -74,8 +74,6 @@ namespace SkiingInSkyrim::Core
         constexpr float kSkateAimStrength = 0.3F;
         constexpr float kSkateAimDegrees = 45.0F;
 
-        // Out of stamina, edges reach this fraction of full.
-        constexpr float kTiredEdge = 0.5F;
         // Carving costs nothing below kCarveCostStartSpeed (m/s), all of it from kCarveCostFullSpeed, and
         // nothing for this long after a skating stride starts.
         constexpr float kCarveCostStartSpeed = 1.0F;
@@ -288,7 +286,7 @@ namespace SkiingInSkyrim::Core
         SkiStep result;
         const Vec2 velocityBefore = state.velocity;
 
-        const float edgeLimit = input.tired ? kTiredEdge : 1.0F;
+        const float edgeLimit = input.tired ? std::clamp(settings.tiredEdgeFraction, 0.0F, 1.0F) : 1.0F;
         const float edgeTarget = std::clamp(input.edgeTarget, -edgeLimit, edgeLimit);
         const bool  skateEdge = input.edgeFromButtons && state.skateEdging;
         const float edgeRate = !input.edgeFromButtons || skateEdge ? settings.triggerEdgeRamp :

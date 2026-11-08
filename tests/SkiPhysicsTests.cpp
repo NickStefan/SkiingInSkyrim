@@ -937,11 +937,12 @@ TEST_CASE("a mouse-button skating stride edges lightly and lets go quickly, so t
     CHECK(carver.state.edge > 0.9F);
 }
 
-TEST_CASE("out of stamina, edges only reach halfway and strides don't start")
+TEST_CASE("out of stamina, edges only reach the tired fraction and strides don't start")
 {
     Skier tired;
+    tired.settings.tiredEdgeFraction = 0.3F;
     tired.Run(0.5F, kFlat, { .edge = 1.0F, .tired = true });
-    CHECK_NEAR(tired.state.edge, 0.5F, 1e-4F);
+    CHECK_NEAR(tired.state.edge, 0.3F, 1e-4F);
 
     Skier skater;
     skater.Step(kFlat, { .edge = 1.0F, .aim = 1.0F, .tired = true });

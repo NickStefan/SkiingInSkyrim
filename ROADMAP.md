@@ -15,6 +15,9 @@ Rough order of work. Things move up or down as playtesting shows what matters.
 - Skis as a wearable, craftable item (ESP); wearing them turns skiing on. Ski models placed under the feet.
 - Procedural ski stance, no animation files: knee bend, forward lean, tuck, lean into turns with hip angulation,
   leg IK to the skis, skating strides (V stance, edged push, weight shift, arm swing). HDT-SMP safe.
+- Skid stance: skidding, the upper body turns toward the direction of travel while the legs stay with the skis.
+- Airs: small hops keep the stance; past a set drop the game's (or OAR's) fall animation takes over.
+- Stamina: hard carving and skating strides cost stamina; out of it, edges are weaker and strides don't start.
 - Debug overlay: fall line, ski and travel arrows, edge gauge, pivot, lean, skating, mph.
 
 Controller is the intended way to play; keyboard and mouse work but are rougher. True Directional Movement is a
@@ -22,11 +25,6 @@ soft requirement (see Later).
 
 ## Next: release
 
-- [ ] Skid stance: upper body faces downhill while the skis skid across.
-- [ ] Airborne pose: the stance overrides the game's (and OAR's) falling animation. Keep a compact pose for small
-      hops; on longer or higher airs, arms out and more upright, or fade to the game's fall animation.
-- [ ] Carving and skating cost stamina: holding hard edges and skating strides drain it, so long aggressive runs
-      and climbs need pacing.
 - [ ] Footsteps: check whether the walk/run animation under the stance still plays footstep sounds; silence them.
 - [ ] Sounds: edge scrape that grows with skidding, carve hiss with speed, powder whoosh, landings.
 - [ ] README: what the mod does, controls (controller first), requirements (TDM recommended), install, "works best

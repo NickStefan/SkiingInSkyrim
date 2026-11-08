@@ -90,10 +90,11 @@ namespace SkiingInSkyrim::Core
 
         // Stamina: holding an edge while carving on the ground costs up to staminaPerCarveSecond (at full edge,
         // growing with the square of the edge, so light edging is nearly free), and each skating stride costs
-        // staminaPerStride. 0 turns either off. Out of stamina, edges reach only part of the way and strides
-        // don't start.
-        float staminaPerCarveSecond{ 10.0F };
-        float staminaPerStride{ 6.0F };
+        // staminaPerStride. 0 turns either off. Out of stamina, edges reach only tiredEdgeFraction of full and
+        // strides don't start.
+        float staminaPerCarveSecond{ 2.0F };
+        float staminaPerStride{ 2.0F };
+        float tiredEdgeFraction{ 0.5F };
 
         // Side-slipping (sliding slowly and mostly sideways), the edge's grip is measured against the slope:
         // no edge slides on flat skis, full edge holds you, and the trigger travel in between feathers the
