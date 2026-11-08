@@ -128,26 +128,25 @@ namespace SkiingInSkyrim::Menu
                 ImGuiMCP::TextDisabled("%s", "Put on skis to ski (craft them at a forge)");
             }
             RenderBindings();
-            bool rightStick = Settings::AimWithRightStick();
-            if (ImGuiMCP::Checkbox("Steer with the right stick or mouse", &rightStick)) {
-                Settings::SetAimWithRightStick(rightStick);
+            bool lookKeyboard = Settings::LookSteersKeyboardMouse();
+            if (ImGuiMCP::Checkbox("Looking around steers (keyboard/mouse)", &lookKeyboard)) {
+                Settings::SetLookSteersKeyboardMouse(lookKeyboard);
                 Settings::Save();
             }
             if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "The right stick or mouse steers instead of the left stick or A/D, and stops "
-                                           "turning the camera while skiing. The left stick or A/D look around; W tucks "
-                                           "and S brakes.");
+                ImGuiMCP::SetTooltip("%s", "W/A/S/D steer relative to where you look, so moving the mouse while "
+                                           "holding a key turns the skis. Off, they steer relative to the chase "
+                                           "camera and the mouse only looks around.");
             }
-            if (rightStick) {
-                float sensitivity = Settings::MouseSteerSensitivity();
-                if (ImGuiMCP::SliderFloat("Mouse steering", &sensitivity, Settings::kMouseSteerMin,
-                        Settings::kMouseSteerMax, "%.3f")) {
-                    Settings::SetMouseSteerSensitivity(sensitivity);
-                    Settings::Save();
-                }
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", "Degrees the skis turn per count of mouse movement.");
-                }
+            bool lookGamepad = Settings::LookSteersGamepad();
+            if (ImGuiMCP::Checkbox("Looking around steers (gamepad)", &lookGamepad)) {
+                Settings::SetLookSteersGamepad(lookGamepad);
+                Settings::Save();
+            }
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", "The left stick steers relative to where you look, so the right stick "
+                                           "turns the skis while the left is pushed. Off, it steers relative to the "
+                                           "chase camera and the right stick only looks around.");
             }
             bool overlay = Settings::ShowOverlay();
             if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {
@@ -187,7 +186,7 @@ namespace SkiingInSkyrim::Menu
                                         "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
                                         "an arc that tightens with more edge. Attacks, blocking and readying weapons "
                                         "are off while skiing.");
-            ImGuiMCP::TextWrapped("%s", "Steer with the left stick (or the right, if set above) or W/A/S/D: the skis "
+            ImGuiMCP::TextWrapped("%s", "Steer with the left stick or W/A/S/D: the skis "
                                         "turn toward where you push, relative to the camera, more firmly the further "
                                         "you push. Push firmly the way the skis already point to tuck and go faster. "
                                         "On gentle ground, push forward and squeeze the triggers alternately to skate. "

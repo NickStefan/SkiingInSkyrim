@@ -53,10 +53,6 @@ namespace SkiingInSkyrim::Input
             float                                    stickX{ 0.0F };
             float                                    stickY{ 0.0F };
             std::optional<Clock::time_point>         lastStick;
-            float                                    rightStickX{ 0.0F };
-            float                                    rightStickY{ 0.0F };
-            std::optional<Clock::time_point>         lastRightStick;
-            int                                      mouseX{ 0 };
         };
 
         // Input events, the menu framework's input callback and PlayerCharacter::Update all run on the
@@ -137,10 +133,6 @@ namespace SkiingInSkyrim::Input
                 g_state.stickX = stick.xValue;
                 g_state.stickY = stick.yValue;
                 g_state.lastStick = Clock::now();
-            } else if (stick.IsRight()) {
-                g_state.rightStickX = stick.xValue;
-                g_state.rightStickY = stick.yValue;
-                g_state.lastRightStick = Clock::now();
             }
         }
 
@@ -156,9 +148,6 @@ namespace SkiingInSkyrim::Input
                         break;
                     case RE::INPUT_EVENT_TYPE::kThumbstick:
                         OnThumbstick(*static_cast<RE::ThumbstickEvent*>(event));
-                        break;
-                    case RE::INPUT_EVENT_TYPE::kMouseMove:
-                        g_state.mouseX += static_cast<RE::MouseMoveEvent*>(event)->mouseInputX;
                         break;
                     default:
                         break;
@@ -190,25 +179,6 @@ namespace SkiingInSkyrim::Input
             static inline REL::Relocation<decltype(thunk)> func;
         };
 
-        // Steering with the right stick or mouse, they mustn't also turn the camera: the stick's aim is
-        // relative to the camera, so the two would chase each other round.
-        struct SuppressSteeringLook
-        {
-            static bool thunk(RE::LookHandler* handler, RE::InputEvent* event)
-            {
-                if (Skiing::GetDebug().active && Settings::AimWithRightStick() && event) {
-                    const auto type = event->GetEventType();
-                    if (type == RE::INPUT_EVENT_TYPE::kMouseMove ||
-                        (type == RE::INPUT_EVENT_TYPE::kThumbstick && static_cast<RE::ThumbstickEvent*>(event)->IsRight())) {
-                        return false;
-                    }
-                }
-                return func(handler, event);
-            }
-
-            static inline REL::Relocation<decltype(thunk)> func;
-        };
-
         template <class Handler>
         void Suppress(REL::VariantID vtableId, const char* name)
         {
@@ -222,9 +192,6 @@ namespace SkiingInSkyrim::Input
     {
         Suppress<RE::AttackBlockHandler>(RE::VTABLE_AttackBlockHandler[0], "AttackBlockHandler");
         Suppress<RE::ReadyWeaponHandler>(RE::VTABLE_ReadyWeaponHandler[0], "ReadyWeaponHandler");
-        REL::Relocation<std::uintptr_t> look{ RE::VTABLE_LookHandler[0] };
-        SuppressSteeringLook::func = look.write_vfunc(0x1, SuppressSteeringLook::thunk);
-        spdlog::info("hooked LookHandler::CanProcess");
     }
 
     bool Register()
@@ -248,9 +215,6 @@ namespace SkiingInSkyrim::Input
         result.stickX = g_state.stickX;
         result.stickY = g_state.stickY;
         result.stickAge = Age(g_state.lastStick, now);
-        result.rightStickX = g_state.rightStickX;
-        result.rightStickY = g_state.rightStickY;
-        result.rightStickAge = Age(g_state.lastRightStick, now);
         result.triggerLeft = HeldValue(RE::INPUT_DEVICE::kGamepad, kLeftTrigger, now);
         result.triggerRight = HeldValue(RE::INPUT_DEVICE::kGamepad, kRightTrigger, now);
         result.mouseLeft = Held(Button{ RE::INPUT_DEVICE::kMouse, kLeftMouse }, now);
@@ -267,8 +231,6 @@ namespace SkiingInSkyrim::Input
         result.keyAge = Age(latest, now);
         return result;
     }
-
-    int TakeMouseX() { return std::exchange(g_state.mouseX, 0); }
 
     void BeginCapture(Settings::Binding binding) noexcept
     {

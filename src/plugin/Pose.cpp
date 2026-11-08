@@ -94,10 +94,11 @@ namespace SkiingInSkyrim::Pose
         std::mutex g_standingLock;
         Standing   g_standing;
 
-        // Animation thread only.
+        // Animation thread only. Holding the root keeps its address from being reused by a rebuilt character
+        // while the bones are cached; both are let go once posing stops.
         struct Live
         {
-            const RE::NiAVObject*                                root{ nullptr };
+            RE::NiPointer<RE::NiAVObject>                        root;
             std::array<RE::NiPointer<RE::NiAVObject>, kBoneCount> bones;
             bool                                                 complete{ false };
         };
@@ -138,7 +139,7 @@ namespace SkiingInSkyrim::Pose
 
         void Find(RE::NiAVObject* character)
         {
-            g_live = { .root = character };
+            g_live = { .root = RE::NiPointer<RE::NiAVObject>(character) };
             g_live.complete = true;
             for (std::size_t i = 0; i < kBoneCount; ++i) {
                 auto* bone = character->GetObjectByName(kBoneNames[i]);
@@ -255,13 +256,17 @@ namespace SkiingInSkyrim::Pose
             const float target = body.active && Settings::StanceEnabled() ? 1.0F : 0.0F;
             g_weight = Approach(g_weight, target, std::max(0.0F, delta) / kBlendSeconds);
             if (g_weight <= 0.0F) {
+                g_live = {};
+                g_track = {};
+                g_skate = 0.0F;
                 return std::nullopt;
             }
             auto* character = player->Get3D(false);
             if (!character) {
+                g_live = {};
                 return std::nullopt;
             }
-            if (g_live.root != character) {
+            if (g_live.root.get() != character) {
                 Find(character);
             }
             std::scoped_lock lock(g_standingLock);

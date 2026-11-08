@@ -134,7 +134,6 @@ namespace SkiingInSkyrim::Core
         // 0..1, how firmly the player pushes whatever the direction, if more than aimStrength. Keys keep
         // building it while held, even as which keys changes, where aimStrength starts over.
         float pushStrength{ 0.0F };
-        float yawTurn{ 0.0F };             // radians to turn the skis directly this frame (mouse steering)
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention
     };

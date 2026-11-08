@@ -5,7 +5,8 @@ Rough order of work. Things move up or down as playtesting shows what matters.
 ## Done
 
 - Ski model: yaw separate from travel, edge grip and sidecut carving, skids, parking, falling leaf.
-- Camera-relative steering on the left stick (right stick or mouse optional), tuck, self-aligning skis.
+- Camera-relative steering on the left stick or W/A/S/D (looking around steers too: on by default for
+  keyboard/mouse, off for gamepad), tuck, self-aligning skis.
 - Speed: two-part drag (light air drag plus a speed limiter), so gentle runs carry speed and steep ones don't run
   away; powder adds to the limiter.
 - Carve pump: a clean carve held through a turn keeps or builds speed, never more than cancelling drag.
@@ -38,8 +39,6 @@ sound conditions can key off it.
 - [ ] Carving costs stamina: holding hard edges drains it, so long aggressive runs need pacing.
 - [ ] Cross-country feel: whether skating plus gentle-ground glide is enough to travel Skyrim on skis, or whether
       longer flats need a dedicated stride/double-pole move.
-- [ ] Keyboard and mouse: mouse steering lets the skis self-align back toward travel as soon as the mouse stops,
-      which fights traverses and switchbacks; a held mouse heading (skis stay where the mouse left them) may fix it.
 - [ ] Auto-edge mode (keyboard-only skiing with WASD): the edge follows the steering intent instead of the mouse
       buttons. Turning edges toward the turn (more with a bigger aim offset and more speed), traversing across the
       hill holds a light uphill edge so the line doesn't slide away, pointing downhill or tucking (W) runs flat, S

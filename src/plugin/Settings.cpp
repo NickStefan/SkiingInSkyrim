@@ -214,8 +214,8 @@ namespace SkiingInSkyrim::Settings
             std::array<std::string, kBindingCount>  bindingNames;
             bool                                    modEnabled{ true };
             bool                                    showOverlay{ true };
-            bool                                    aimWithRightStick{ false };
-            float                                   mouseSteerSensitivity{ 0.1F };
+            bool                                    lookSteersKeyboardMouse{ true };
+            bool                                    lookSteersGamepad{ false };
             bool                                    traceShaking{ false };
             bool                                    stanceEnabled{ true };
             Core::StanceSettings                    stance;
@@ -349,11 +349,11 @@ namespace SkiingInSkyrim::Settings
                     loaded.bindings[i] = *button;
                 }
             }
-            if (const auto value = ini.GetInt("Controls", "AimWithRightStick")) {
-                loaded.aimWithRightStick = *value != 0;
+            if (const auto value = ini.GetInt("Controls", "LookSteersKeyboardMouse")) {
+                loaded.lookSteersKeyboardMouse = *value != 0;
             }
-            if (const auto value = ini.GetFloat("Controls", "MouseSteerSensitivity")) {
-                loaded.mouseSteerSensitivity = std::clamp(*value, kMouseSteerMin, kMouseSteerMax);
+            if (const auto value = ini.GetInt("Controls", "LookSteersGamepad")) {
+                loaded.lookSteersGamepad = *value != 0;
             }
             for (const auto& field : kPhysicsFields) {
                 if (const auto value = ini.GetFloat("Physics", field.key)) {
@@ -420,11 +420,11 @@ namespace SkiingInSkyrim::Settings
             text += fmt::format("; {}: {}\n", kBindings[i].help, name.empty() ? "unbound" : name);
             WriteButton(text, kBindings[i], state.bindings[i]);
         }
-        text += "; Steer with the right stick or mouse instead of the left stick or A/D (1 on, 0 off). The left stick "
-                "or A/D then look around, and W tucks.\n";
-        text += fmt::format("AimWithRightStick = {}\n", state.aimWithRightStick ? 1 : 0);
-        text += "; Steering with the mouse: degrees the skis turn per count of mouse movement.\n";
-        text += fmt::format("MouseSteerSensitivity = {:.3f}\n", state.mouseSteerSensitivity);
+        text += "; Looking around with the mouse moves where W/A/S/D steer, so the mouse steers too (1 on, 0 off:\n"
+                "; they steer relative to the chase camera's own direction).\n";
+        text += fmt::format("LookSteersKeyboardMouse = {}\n", state.lookSteersKeyboardMouse ? 1 : 0);
+        text += "; Looking around with the right stick moves where the left stick steers (1 on, 0 off).\n";
+        text += fmt::format("LookSteersGamepad = {}\n", state.lookSteersGamepad ? 1 : 0);
         text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
@@ -572,27 +572,27 @@ namespace SkiingInSkyrim::Settings
         g_state.stance = stance;
     }
 
-    bool AimWithRightStick()
+    bool LookSteersKeyboardMouse()
     {
         std::scoped_lock lock(g_lock);
-        return g_state.aimWithRightStick;
+        return g_state.lookSteersKeyboardMouse;
     }
 
-    void SetAimWithRightStick(bool right)
+    void SetLookSteersKeyboardMouse(bool steers)
     {
         std::scoped_lock lock(g_lock);
-        g_state.aimWithRightStick = right;
+        g_state.lookSteersKeyboardMouse = steers;
     }
 
-    float MouseSteerSensitivity()
+    bool LookSteersGamepad()
     {
         std::scoped_lock lock(g_lock);
-        return g_state.mouseSteerSensitivity;
+        return g_state.lookSteersGamepad;
     }
 
-    void SetMouseSteerSensitivity(float degreesPerCount)
+    void SetLookSteersGamepad(bool steers)
     {
         std::scoped_lock lock(g_lock);
-        g_state.mouseSteerSensitivity = std::clamp(degreesPerCount, kMouseSteerMin, kMouseSteerMax);
+        g_state.lookSteersGamepad = steers;
     }
 }

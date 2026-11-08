@@ -360,7 +360,7 @@ namespace SkiingInSkyrim::Telemetry
                     "| state={} support={} flips={} slope={:.1f} fall-line={:+.0f} "
                     "normal=({:+.3f},{:+.3f},{:+.3f}) supportNorm=({:+.3f},{:+.3f},{:+.3f}) "
                     "vel=({:+.2f},{:+.2f},{:+.2f})m/s ground-speed={:.2f}m/s move=({:+.2f},{:+.2f},{:+.2f}) yaw={:.0f} "
-                    "keys={} keyAge={:.2f} stick=({:+.2f},{:+.2f}) stickAge={:.2f} rstick=({:+.2f},{:+.2f}) tdm={} "
+                    "keys={} keyAge={:.2f} stick=({:+.2f},{:+.2f}) stickAge={:.2f} tdm={} "
                     "pos=({:.0f},{:.0f},{:.0f}) dt={:.4f} tuck={:.2f} pump={:.2f} strides={} "
                     "| shake rms/max m/s: body={} body-z={} model={} cam={} | cam-dist={:.2f}m cam-up={:+.2f}m "
                     "state-flips={} dt-max={:.4f}",
@@ -378,7 +378,7 @@ namespace SkiingInSkyrim::Telemetry
                     normal.x, normal.y, normal.z, supportNormal.x, supportNormal.y, supportNormal.z,
                     velocity.x, velocity.y, velocity.z, Core::HorizontalLength(velocity),
                     move.movement.x, move.movement.y, move.movement.z, yaw * kDegrees,
-                    keys, raw.keyAge, raw.stickX, raw.stickY, raw.stickAge, raw.rightStickX, raw.rightStickY,
+                    keys, raw.keyAge, raw.stickX, raw.stickY, raw.stickAge,
                     Tdm::Status(), position.x, position.y, position.z, delta, ski.step.tuck, ski.step.pump, strideCount, body.Take(),
                     bodyVertical.Take(), model.Take(), cameraShake.Take(), cameraDistance, cameraUp, animFlips, worstDelta);
             }
