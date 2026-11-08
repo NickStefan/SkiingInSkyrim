@@ -255,7 +255,7 @@ namespace SkiingInSkyrim::Core
     float LandingHeight(Vec3 velocity, Vec3 slopeNormal, const SkiSettings& settings) noexcept
     {
         const float height = ImpactHeight(velocity, slopeNormal, settings.gravity);
-        return settings.powder ? height * (1.0F - std::clamp(settings.powderLanding, 0.0F, 1.0F)) : height;
+        return settings.powder ? std::max(0.0F, height - std::max(0.0F, settings.powderLandingMetres)) : height;
     }
 
     float AimStrength(float stickX, float stickY, float deadzone) noexcept

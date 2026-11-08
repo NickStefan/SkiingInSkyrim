@@ -828,8 +828,10 @@ TEST_CASE("powder is slower, bites harder sideways and cushions landings")
     CHECK(powderSmear.Speed() < packedSmear.Speed() - 0.4F);
 
     const Vec3 drop{ 0.0F, 0.0F, -14.0F };
-    CHECK_NEAR(LandingHeight(drop, kFlat, powder.settings), ImpactHeight(drop, kFlat, 9.81F) * 0.5F, 1e-3F);
+    CHECK_NEAR(LandingHeight(drop, kFlat, powder.settings),
+        ImpactHeight(drop, kFlat, 9.81F) - powder.settings.powderLandingMetres, 1e-3F);
     CHECK_NEAR(LandingHeight(drop, kFlat, packed.settings), ImpactHeight(drop, kFlat, 9.81F), 1e-3F);
+    CHECK(LandingHeight({ 0.0F, 0.0F, -5.0F }, kFlat, powder.settings) == 0.0F);
 }
 
 TEST_CASE("powder bites at speed on steep runs but leaves gentle cruising mostly alone")

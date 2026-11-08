@@ -210,14 +210,64 @@ namespace SkiingInSkyrim::Skiing
         // scale for Havok units.
         std::optional<float> g_fallUnits;
 
+        // The game's own fall start this time off the ground, and what we last replaced it with.
+        std::optional<float> g_fallStart;
+        std::optional<float> g_fallWritten;
+
+        // The landing is looked for along the path of free fall, a step at a time, from a little above the feet
+        // so the first step doesn't start inside the slope just left.
+        constexpr float kLandingStepSeconds = 0.25F;
+        constexpr int   kLandingSteps = 8;
+        constexpr float kLandingProbeLift = 20.0F;  // game units
+
+        // The normal of the ground this fall will land on, if it's within reach.
+        std::optional<Core::Vec3> PredictLanding(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
+            const RE::NiPoint3& position, const Core::Vec3& velocity, float gravity)
+        {
+            auto* cell = player->GetParentCell();
+            auto* world = cell ? cell->GetbhkWorld() : nullptr;
+            if (!world) {
+                return std::nullopt;
+            }
+            RE::CFilter own;
+            controller->GetCollisionFilterInfo(own);
+            const std::uint32_t filter =
+                (own.GetSystemGroup() << 16) | static_cast<std::uint32_t>(RE::COL_LAYER::kCharController);
+            const float scale = RE::bhkWorld::GetWorldScale();
+            const auto  havokAt = [&](float t) {
+                const float rise = (velocity.z * t - 0.5F * gravity * t * t) * kUnitsPerMetre;
+                return RE::hkVector4((position.x + velocity.x * t * kUnitsPerMetre) * scale,
+                    (position.y + velocity.y * t * kUnitsPerMetre) * scale, (position.z + kLandingProbeLift + rise) * scale,
+                    0.0F);
+            };
+            auto from = havokAt(0.0F);
+            for (int i = 1; i <= kLandingSteps; ++i) {
+                const auto      to = havokAt(static_cast<float>(i) * kLandingStepSeconds);
+                RE::bhkPickData pick;
+                pick.rayInput.from = from;
+                pick.rayInput.to = to;
+                pick.rayInput.filterInfo.filter = filter;
+                world->PickObject(pick);
+                if (pick.rayOutput.HasHit()) {
+                    return ToVec3(pick.rayOutput.normal);
+                }
+                from = to;
+            }
+            return std::nullopt;
+        }
+
         // Skyrim's fall damage counts the height dropped since leaving the ground. On skis what hurts is how
-        // hard you meet the slope, so while off the ground the fall is restarted no higher than would land
-        // as hard as meeting the slope just left at the current velocity. Never more than the game's own.
-        void SoftenFall(RE::bhkCharacterController* controller, const RE::NiPoint3& position, const Core::Vec3& velocity,
-            const Core::GroundEstimate& ground, const Core::SkiSettings& physics)
+        // hard you meet the ground, so while off the ground the fall is restarted no higher than would land as
+        // hard as meeting the predicted landing slope (or the slope just left, when it's out of reach) at the
+        // current velocity. Never more than the game's own.
+        void SoftenFall(RE::PlayerCharacter* player, RE::bhkCharacterController* controller, const RE::NiPoint3& position,
+            const Core::Vec3& velocity, const Core::GroundEstimate& ground, const Core::SkiSettings& physics)
         {
             g_debug.fallMetres = -1.0F;
+            g_debug.landingSlopeDegrees = -1.0F;
             if (controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported) {
+                g_fallStart.reset();
+                g_fallWritten.reset();
                 return;
             }
             if (!g_fallUnits) {
@@ -231,10 +281,19 @@ namespace SkiingInSkyrim::Skiing
                 spdlog::info("fall start height is in {} units (start={:.1f}, z={:.1f})",
                     *g_fallUnits == 1.0F ? "game" : "Havok", start, position.z);
             }
-            const auto  normal = ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F };
+            if (!g_fallWritten || controller->fallStartHeight != *g_fallWritten) {
+                g_fallStart = controller->fallStartHeight;
+            }
+            const auto landing = PredictLanding(player, controller, position, velocity, physics.gravity);
+            if (landing) {
+                g_debug.landingSlopeDegrees =
+                    std::acos(std::clamp(landing->z, -1.0F, 1.0F)) * 180.0F / std::numbers::pi_v<float>;
+            }
+            const auto  normal = landing ? *landing : ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F };
             const float metres = Core::LandingHeight(velocity, normal, physics);
             const float soft = (position.z + metres * kUnitsPerMetre) * *g_fallUnits;
-            controller->fallStartHeight = std::min(controller->fallStartHeight, soft);
+            controller->fallStartHeight = std::min(*g_fallStart, soft);
+            g_fallWritten = controller->fallStartHeight;
             g_debug.fallMetres = (controller->fallStartHeight / *g_fallUnits - position.z) / kUnitsPerMetre;
         }
 
@@ -367,6 +426,8 @@ namespace SkiingInSkyrim::Skiing
             g_sinceStride = kSkatingShownSeconds;
             g_slip = 0.0F;
             g_airPeak.reset();
+            g_fallStart.reset();
+            g_fallWritten.reset();
         }
         const auto& ground = g_ground.Update({
             .supported = controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported,
@@ -441,7 +502,7 @@ namespace SkiingInSkyrim::Skiing
         Camera::Apply(player, delta, step.velocity);
         SetCommand({ true, step.velocity });
         g_debug.hugging = HugGround(controller, velocity, ground, physics, delta);
-        SoftenFall(controller, position, velocity, ground, physics);
+        SoftenFall(player, controller, position, velocity, ground, physics);
         g_debug.heightCorrection = SyncHeight(player, controller, ground, physics, delta);
         SetOverlay({
             .active = true,

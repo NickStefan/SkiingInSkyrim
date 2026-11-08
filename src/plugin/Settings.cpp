@@ -91,8 +91,9 @@ namespace SkiingInSkyrim::Settings
             { "PowderSideGrip", "Powder side grip", "Flat grip is multiplied by this in powder: skids, stops and "
                                                     "steered turns bite harder.",
                 &S::powderSideGrip, 1.0F, 4.0F, "%.2f" },
-            { "PowderLanding", "Powder landing", "Fraction of a landing's impact the powder absorbs.",
-                &S::powderLanding, 0.0F, 1.0F, "%.2f" },
+            { "PowderLandingMetres", "Powder landing", "Metres of fall the powder absorbs on landing: smaller drops "
+                                                       "are free, bigger ones count the rest.",
+                &S::powderLandingMetres, 0.0F, 10.0F, "%.1f" },
             { "GroundHugSeconds", "Ground hug time", "Seconds off the ground over a crest (not a jump) during which "
                                                      "you're held to the slope; longer absorbs bigger crests, 0 is off.",
                 &S::groundHugSeconds, 0.0F, 1.0F, "%.2f" },

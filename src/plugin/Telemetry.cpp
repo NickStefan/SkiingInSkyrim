@@ -75,6 +75,7 @@ namespace SkiingInSkyrim::Telemetry
             float      peak{ 0.0F };  // metres above the slope taken off from
             float      lastVertical{ 0.0F };
             float      fallMetres{ -1.0F };  // what the game counts as the fall, last frame in the air
+            float      predictedSlope{ -1.0F };  // the landing slope predicted then, if in reach
             int        frames{ 0 };
             int        hugFrames{ 0 };
             bool       jumped{ false };
@@ -101,16 +102,18 @@ namespace SkiingInSkyrim::Telemetry
                     jumped = jumped || jumping;
                     lastVertical = velocity.z;
                     fallMetres = ski.fallMetres;
+                    predictedSlope = ski.landingSlopeDegrees;
                     const Core::Vec3 offset{ position.x - start.x, position.y - start.y, position.z - start.z };
                     peak = std::max(peak, (offset.x * plane.x + offset.y * plane.y + offset.z * plane.z) / kUnitsPerMetre);
                     return;
                 }
                 inAir = false;
                 spdlog::info("air {:.2f}s{}: takeoff speed={:.1f}m/s vz={:+.1f} slope={:.0f} | peak above that slope={:.2f}m "
-                             "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames | fall counted={}",
+                             "| landing vz={:+.1f} slope={:.0f} predicted={} | hug {}/{} frames | fall counted={}",
                     seconds, jumped ? " (jump)" : "", takeoffSpeed, takeoffVertical, takeoffSlope, peak, lastVertical,
-                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees, hugFrames, frames,
-                    fallMetres >= 0.0F ? fmt::format("{:.1f}m", fallMetres) : std::string("?"));
+                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees,
+                    predictedSlope >= 0.0F ? fmt::format("{:.0f}", predictedSlope) : std::string("none"), hugFrames,
+                    frames, fallMetres >= 0.0F ? fmt::format("{:.1f}m", fallMetres) : std::string("?"));
             }
         };
 

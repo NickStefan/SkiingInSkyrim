@@ -103,11 +103,12 @@ namespace SkiingInSkyrim::Core
         // Powder: deep snow resists you more the faster you plough through it (powderDragPerSpeedFourth * v^4
         // on top of drag, so it mostly bites at speed on steep runs and leaves gentle cruising alone),
         // pushes back harder against the skis' sides (flat grip times powderSideGrip, so skids, stops and
-        // steered turns bite more), and cushions landings (powderLanding of the impact absorbed).
+        // steered turns bite more), and cushions landings (powderLandingMetres of fall absorbed, so small
+        // drops are free and big ones still hurt).
         bool  powder{ true };
         float powderDragPerSpeedFourth{ 0.000056F };
         float powderSideGrip{ 2.0F };
-        float powderLanding{ 0.5F };
+        float powderLandingMetres{ 3.0F };
 
         // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
         // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra
