@@ -344,7 +344,11 @@ namespace SkiingInSkyrim::Skiing
             SetCommand({});
             SetOverlay({ .active = false, .inactiveReason = reason });
             Camera::Reset();
-            SetBody({});
+            // The stance blends out from the last pose, so it keeps where the skis pointed.
+            auto body = GetBody();
+            body.active = false;
+            body.airDropMetres = 0.0F;
+            SetBody(body);
             Skis::Sync(player, nullptr);
             return;
         }
