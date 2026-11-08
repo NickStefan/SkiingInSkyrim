@@ -58,13 +58,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     spdlog::info("SkiingInSkyrim {} loading on Skyrim {}", SIS_VERSION_STRING,
         REL::Module::get().version().string("."));
 
+    if (REL::Module::IsVR()) {
+        spdlog::critical("Skyrim VR is not supported");
+        return false;
+    }
     if (const auto* messaging = SKSE::GetMessagingInterface();
         messaging == nullptr || !messaging->RegisterListener(OnMessage)) {
         spdlog::critical("SKSE messaging listener registration failed");
-        return false;
-    }
-    if (REL::Module::IsVR()) {
-        spdlog::critical("Skyrim VR is not supported");
         return false;
     }
     SkiingInSkyrim::Telemetry::Install();

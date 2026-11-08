@@ -36,6 +36,7 @@ INGREDIENTS = [(FIREWOOD, 2), (LEATHER_STRIPS, 2)]
 CLOTHING = 2  # BOD2 armour type
 ESL = 0x200
 FORM_VERSION = 44
+HEADER_VERSION = 1.70  # 1.71 needs AE; SE 1.5.97 only loads ESLs up to 1.70 (ids 0x800-0xFFF)
 
 
 def zstring(text):
@@ -93,7 +94,7 @@ def build():
     count = len(groups) + 4
     header = record(
         'TES4', 0,
-        sub('HEDR', struct.pack('<fiI', 1.71, count, 0x804)),
+        sub('HEDR', struct.pack('<fiI', HEADER_VERSION, count, 0x804)),
         sub('CNAM', zstring('Nick')),
         sub('SNAM', zstring('Skiing in Skyrim: wearable skis. Needs SkiingInSkyrim.dll.')),
         sub('MAST', zstring('Skyrim.esm')),
