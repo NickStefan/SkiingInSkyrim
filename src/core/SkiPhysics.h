@@ -78,7 +78,9 @@ namespace SkiingInSkyrim::Core
         // Skating: on gentle ground (up to skateMaxSlopeDegrees) with the stick pushed forward, each fresh
         // squeeze of a trigger is a skating stride, pushing you along the skis by up to skateImpulse (m/s),
         // less the closer you are to skateMaxSpeed, and half as much if it's the same side as the last stride.
+        // The push builds and fades over skatePushSeconds, as the leg pushes out.
         float skateImpulse{ 1.0F };
+        float skatePushSeconds{ 0.35F };
         float skateMaxSpeed{ 6.0F };
         float skateMaxSlopeDegrees{ 10.0F };
         // With the stick centred, no edge and no skid, flat skis sliding faster than a side-slip swing round
@@ -149,6 +151,9 @@ namespace SkiingInSkyrim::Core
         float lastEdgeTarget{ 0.0F }; // last frame's edge input, to see fresh trigger squeezes
         float lastSkateSide{ 0.0F };  // side of the last skating stride, 0 before the first
         bool  skateEdging{ false };   // a mouse-button stride is held: light edge, quick release
+        float strideSide{ 0.0F };     // leg of the latest skating stride: +1 right, -1 left
+        float strideSeconds{ -1.0F }; // since it started; negative before the first
+        float stridePush{ 0.0F };     // m/s it adds in all
         float tuck{ 0.0F };           // 0..1
         float commandedSpeed{ 0.0F };
     };
@@ -167,7 +172,9 @@ namespace SkiingInSkyrim::Core
         float tuck{ 0.0F };            // 0..1
         float pump{ 0.0F };            // m/s^2 of forward push from carving
         float turnAcceleration{ 0.0F };  // m/s^2 the path curves at, positive right; on the ground only
-        bool  skated{ false };         // a skating stride this frame
+        bool  skated{ false };         // a skating stride started this frame
+        float strideSide{ 0.0F };      // leg of the latest stride, +1 right, -1 left; 0 before any
+        float strideSeconds{ -1.0F };  // since it started
     };
 
     // Arc radius of a carving ski at the given edge angle, or infinity when flat.

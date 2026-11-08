@@ -102,6 +102,42 @@ TEST_CASE("solving the leg for the shifted hips gives back the stance's angles")
     CHECK_NEAR(thigh + shin + shift.up - leg.knee.z, thigh * std::cos(hipAngle), 1e-3F);
 }
 
+TEST_CASE("a skating stride pushes its ski out, lifts it back, and moves the weight across")
+{
+    const StanceSettings settings;
+    const float push = 0.35F;
+    CHECK(!SkateAt(settings, 0.0F, 0.1F, push).active);
+    CHECK(!SkateAt(settings, 1.0F, -1.0F, push).active);
+    CHECK(!SkateAt(settings, 1.0F, 5.0F, push).active);
+
+    const auto start = SkateAt(settings, 1.0F, 0.0F, push);
+    CHECK(start.active);
+    CHECK_NEAR(start.legs[1].out, 0.0F, 1e-5F);
+    CHECK_NEAR(start.hipsOver, 1.0F, 1e-5F);  // still over the right ski, the last stride's glide
+
+    const auto pushed = SkateAt(settings, 1.0F, push, push);
+    CHECK_NEAR(pushed.legs[1].out, settings.skatePushOut, 1e-3F);
+    CHECK_NEAR(pushed.legs[1].lift, 0.0F, 1e-5F);
+    CHECK(pushed.legs[1].edge > 0.0F);
+    CHECK_NEAR(pushed.legs[0].out, 0.0F, 1e-6F);  // the gliding ski stays under its hip
+    CHECK_NEAR(pushed.hipsOver, -1.0F, 1e-5F);    // now over the left
+    CHECK_NEAR(pushed.armSwing, 1.0F, 1e-5F);     // right arm back
+
+    const auto recovering = SkateAt(settings, 1.0F, push + 0.15F, push);
+    CHECK(recovering.legs[1].lift > 0.9F * settings.skateLift);
+    CHECK(recovering.legs[1].out < settings.skatePushOut);
+
+    const auto gliding = SkateAt(settings, 1.0F, push + 0.5F, push);
+    CHECK(gliding.active);
+    CHECK_NEAR(gliding.legs[1].out, 0.0F, 1e-5F);
+    CHECK_NEAR(gliding.legs[1].lift, 0.0F, 1e-5F);
+
+    // The left stride mirrors it, and starts where the right one left the weight.
+    const auto left = SkateAt(settings, -1.0F, 0.0F, push);
+    CHECK_NEAR(left.hipsOver, -1.0F, 1e-5F);
+    CHECK_NEAR(left.armSwing, 1.0F, 1e-5F);
+}
+
 TEST_CASE("a target out of reach straightens the leg toward it and says how far short")
 {
     const auto leg = SolveLeg({ 0.0F, 0.0F, 100.0F }, { 0.0F, 0.0F, 0.0F }, 30.0F, 28.0F, { 0.0F, 1.0F, 0.0F });

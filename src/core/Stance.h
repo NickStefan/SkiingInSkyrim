@@ -26,6 +26,15 @@ namespace SkiingInSkyrim::Core
         float turnLean{ 0.7F };
         float hipAngulation{ 0.5F };
         float upperBodyUpright{ 0.4F };
+        // Skating: the skis splay into a V, tips out; each stride pushes a ski out sideways (game units) on
+        // its inside edge, then lifts it back under the hips, the weight moving onto the other ski. The arms
+        // swing side to side and the upper body leans further forward.
+        float skateSplayDegrees{ 15.0F };
+        float skatePushOut{ 25.0F };
+        float skateLift{ 6.0F };
+        float skateEdgeDegrees{ 25.0F };
+        float skateArmSwingDegrees{ 35.0F };
+        float skateLeanDegrees{ 10.0F };
     };
 
     struct StanceAngles
@@ -69,5 +78,23 @@ namespace SkiingInSkyrim::Core
         Vec3  hinge;  // unit axis the knee bends about: the normal of the leg's plane
         float excess{ 0.0F };
     };
+    // Where a skating stride has got to. Legs are left, right.
+    struct SkateLeg
+    {
+        float out{ 0.0F };   // game units pushed out sideways from under the hip
+        float lift{ 0.0F };  // game units off the snow
+        float edge{ 0.0F };  // radians onto the inside edge
+    };
+    struct SkatePose
+    {
+        bool     active{ false };  // a stride is under way or was recent
+        SkateLeg legs[2];
+        float    hipsOver{ 0.0F };  // -1 over the left ski .. +1 over the right
+        float    armSwing{ 0.0F };  // -1 .. +1: positive swings the right arm back and the left forward
+    };
+    // side: the stride's leg, +1 right, -1 left (0 for none); seconds since it started; pushSeconds how long
+    // the push lasts.
+    [[nodiscard]] SkatePose SkateAt(const StanceSettings& settings, float side, float seconds, float pushSeconds) noexcept;
+
     [[nodiscard]] Leg SolveLeg(Vec3 hip, Vec3 ankleTarget, float thighLength, float shinLength, Vec3 bendToward) noexcept;
 }

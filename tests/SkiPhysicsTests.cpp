@@ -902,6 +902,26 @@ TEST_CASE("on the flat, alternating trigger squeezes with the stick forward skat
     CHECK(!steep.last.skated);
 }
 
+TEST_CASE("a stride's push builds over the push time rather than all at once")
+{
+    Skier skater;
+    skater.Step(kFlat, { .edge = 1.0F, .aim = 1.0F });
+    CHECK(skater.last.skated);
+    CHECK_NEAR(skater.last.strideSide, 1.0F, 1e-6F);
+    CHECK(skater.Speed() < 0.1F * skater.settings.skateImpulse);
+
+    skater.Run(skater.settings.skatePushSeconds, kFlat, { .aim = 1.0F });
+    CHECK(skater.Speed() > 0.8F * skater.settings.skateImpulse);
+    CHECK(skater.Speed() < skater.settings.skateImpulse);
+    CHECK(skater.last.strideSeconds > skater.settings.skatePushSeconds - 1e-3F);
+
+    // Off the ground, the rest of the push is lost.
+    Skier jumper;
+    jumper.Step(kFlat, { .edge = 1.0F, .aim = 1.0F });
+    jumper.Run(skater.settings.skatePushSeconds, kFlat, { .aim = 1.0F, .grounded = false });
+    CHECK(jumper.Speed() < 0.1F * jumper.settings.skateImpulse);
+}
+
 TEST_CASE("a mouse-button skating stride edges lightly and lets go quickly, so the skis glide")
 {
     Skier skater;

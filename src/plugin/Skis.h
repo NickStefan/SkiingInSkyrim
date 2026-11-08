@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/SkiPose.h"
 #include "plugin/Skiing.h"
 
 namespace SkiingInSkyrim::Skis
@@ -25,7 +26,8 @@ namespace SkiingInSkyrim::Skis
     inline constexpr float kHalfWidth = 5.0F;
 
     // Animation thread, after the body is posed: draws the skis under the feet while skiing, and takes them
-    // away otherwise. Each ski's centre goes stance (left, right) units right of the character if given,
+    // away otherwise. The skis go where posed says (left, right; relative to the character) if given,
     // otherwise under the feet wherever the animation put them.
-    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<float, 2>* stance);
+    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta,
+        const std::array<Core::SkiPose, 2>* posed);
 }

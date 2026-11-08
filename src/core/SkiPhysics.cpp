@@ -82,6 +82,8 @@ namespace SkiingInSkyrim::Core
         const float     kTuckFullAlign = std::cos(10.0F * kRadians);
         const float     kTuckHoldStartAlign = std::cos(80.0F * kRadians);
         const float     kTuckHoldFullAlign = std::cos(60.0F * kRadians);
+        // Stride timing stops counting here: long after any stride has finished.
+        constexpr float kStrideForgetSeconds = 60.0F;
         // Slower than this (m/s), the path's curve isn't measured: the direction of travel is too noisy.
         constexpr float kTurnMinSpeed = 0.5F;
         constexpr float kTuckInSeconds = 0.3F;
@@ -369,12 +371,25 @@ namespace SkiingInSkyrim::Core
             if (n.z >= std::cos(settings.skateMaxSlopeDegrees * kRadians) && speedNow < settings.skateMaxSpeed) {
                 const float side = std::copysign(1.0F, edgeTarget);
                 const float alternate = side != state.lastSkateSide ? 1.0F : 0.5F;
-                const float push = settings.skateImpulse * alternate * (1.0F - speedNow / settings.skateMaxSpeed);
-                velocity = Add(velocity, Scale(Forward(yaw), push));
+                state.strideSide = side;
+                state.strideSeconds = 0.0F;
+                state.stridePush = settings.skateImpulse * alternate * (1.0F - speedNow / settings.skateMaxSpeed);
                 state.lastSkateSide = side;
                 state.skateEdging = input.edgeFromButtons;
                 result.skated = true;
             }
+        }
+        // The stride's push is spread over the leg's push; off the ground, that part of it is lost.
+        if (state.strideSeconds >= 0.0F) {
+            const float pushSeconds = std::max(settings.skatePushSeconds, kMinSeconds);
+            const float before = Smoothstep(0.0F, pushSeconds, state.strideSeconds);
+            state.strideSeconds = std::min(state.strideSeconds + dt, kStrideForgetSeconds);
+            const float after = Smoothstep(0.0F, pushSeconds, state.strideSeconds);
+            if (input.grounded) {
+                velocity = Add(velocity, Scale(Forward(yaw), state.stridePush * (after - before)));
+            }
+            result.strideSide = state.strideSide;
+            result.strideSeconds = state.strideSeconds;
         }
 
         // Above the cap the v^4 terms would brake past it in a single frame.

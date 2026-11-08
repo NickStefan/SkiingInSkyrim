@@ -72,6 +72,8 @@ namespace SkiingInSkyrim::Settings
             { "SkateImpulse", "Skate stride", "m/s each skating stride adds from a standstill (on gentle ground, stick "
                                               "pushed forward, squeeze the triggers alternately). 0 is off.",
                 &S::skateImpulse, 0.0F, 3.0F, "%.2f" },
+            { "SkatePushSeconds", "Skate push time", "Seconds each stride's push lasts, as the leg pushes out.",
+                &S::skatePushSeconds, 0.1F, 1.0F, "%.2f" },
             { "SkateMaxSpeed", "Skate top speed", "m/s. Strides push less the closer you are to this, and not at all "
                                                   "beyond it.",
                 &S::skateMaxSpeed, 1.0F, 12.0F, "%.1f" },
@@ -165,6 +167,18 @@ namespace SkiingInSkyrim::Settings
             { "UpperBodyUpright", "Turn: upper body upright", "Fraction of the lean the upper body takes back, "
                                                              "staying more upright than the legs.",
                 &T::upperBodyUpright, 0.0F, 1.0F, "%.2f" },
+            { "SkateSplayDegrees", "Skate: V", "Degrees each ski's tip points out while skating.", &T::skateSplayDegrees,
+                0.0F, 40.0F, "%.0f" },
+            { "SkatePushOut", "Skate: push out", "How far (game units) each stride pushes the ski out to the side.",
+                &T::skatePushOut, 0.0F, 60.0F, "%.0f" },
+            { "SkateLift", "Skate: lift", "How high (game units) the pushing ski lifts as it comes back.", &T::skateLift,
+                0.0F, 20.0F, "%.0f" },
+            { "SkateEdgeDegrees", "Skate: edge", "Degrees the pushing ski rolls onto its inside edge.", &T::skateEdgeDegrees,
+                0.0F, 60.0F, "%.0f" },
+            { "SkateArmSwingDegrees", "Skate: arm swing", "Degrees the arms swing forward and back with the strides.",
+                &T::skateArmSwingDegrees, 0.0F, 90.0F, "%.0f" },
+            { "SkateLeanDegrees", "Skate: torso", "Degrees of torso lean added while skating.", &T::skateLeanDegrees, 0.0F,
+                40.0F, "%.0f" },
         };
 
         struct BindingInfo

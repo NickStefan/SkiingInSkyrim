@@ -226,7 +226,7 @@ namespace SkiingInSkyrim::Skis
         g_prepared = std::move(model);
     }
 
-    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<float, 2>* stance)
+    void Place(RE::PlayerCharacter* player, const Skiing::Body& body, float delta, const std::array<Core::SkiPose, 2>* posed)
     {
         std::scoped_lock lock(g_lock);
         if (!body.active || !body.skis) {
@@ -248,27 +248,25 @@ namespace SkiingInSkyrim::Skis
             Attach(g_placed, character);
         }
 
-        const float blend = g_placed.stanceKnown ? 1.0F - std::exp(-std::max(0.0F, delta) / kStanceSeconds) : 1.0F;
-        if (stance) {
-            g_placed.stance = *stance;
-        } else {
-            for (std::size_t i = 0; i < 2; ++i) {
-                const float side = i == 0 ? -1.0F : 1.0F;
-                const auto* foot = g_placed.feet[i].get();
-                const float lateral = foot ? Skeleton::Relative(foot, character).translate.x * side : kStanceDefault;
-                const float target = side * std::clamp(lateral, kStanceMin, kStanceMax);
-                g_placed.stance[i] += (target - g_placed.stance[i]) * blend;
-            }
-        }
-        g_placed.stanceKnown = true;
-
         const float heading = player->data.angle.z;
         const auto  normal = Skeleton::ToCharacter(body.groundNormal, heading);
         const float yaw = std::remainder(body.yaw - heading, 2.0F * std::numbers::pi_v<float>);
+        const float blend = g_placed.stanceKnown ? 1.0F - std::exp(-std::max(0.0F, delta) / kStanceSeconds) : 1.0F;
         for (std::size_t i = 0; i < 2; ++i) {
+            if (posed) {
+                g_placed.stance[i] = (*posed)[i].position.x;
+                SetLocal(*g_placed.model.parts[i], (*posed)[i], g_placed.model.scale);
+                continue;
+            }
+            const float side = i == 0 ? -1.0F : 1.0F;
+            const auto* foot = g_placed.feet[i].get();
+            const float lateral = foot ? Skeleton::Relative(foot, character).translate.x * side : kStanceDefault;
+            const float target = side * std::clamp(lateral, kStanceMin, kStanceMax);
+            g_placed.stance[i] += (target - g_placed.stance[i]) * blend;
             SetLocal(*g_placed.model.parts[i], Core::PlaceSki(normal, yaw, body.edgeRadians, g_placed.stance[i], kHalfWidth),
                 g_placed.model.scale);
         }
+        g_placed.stanceKnown = true;
         RE::NiUpdateData update{};
         for (auto& root : g_placed.model.roots) {
             root->Update(update);

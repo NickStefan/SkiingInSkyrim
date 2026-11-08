@@ -103,6 +103,10 @@ namespace SkiingInSkyrim::Pose
         };
         Live  g_live;
         float g_weight = 0.0F;
+        float g_skate = 0.0F;  // how far into the skating stance
+
+        constexpr float kSkateBlendSeconds = 0.25F;
+        constexpr float kRadians = std::numbers::pi_v<float> / 180.0F;
 
         const RE::NiPoint3 kRight{ 1.0F, 0.0F, 0.0F };
         const RE::NiPoint3 kForward{ 0.0F, 1.0F, 0.0F };
@@ -166,12 +170,16 @@ namespace SkiingInSkyrim::Pose
             }
         }
 
-        // Poses the body; returns where it put each ski (units right of the character) if it did.
-        std::optional<std::array<float, 2>> Apply(RE::PlayerCharacter* player, const Skiing::Body& body, float delta)
+        float Approach(float value, float target, float step)
+        {
+            return target > value ? std::min(target, value + step) : std::max(target, value - step);
+        }
+
+        // Poses the body; returns where it put the skis (relative to the character) if it did.
+        std::optional<std::array<Core::SkiPose, 2>> Apply(RE::PlayerCharacter* player, const Skiing::Body& body, float delta)
         {
             const float target = body.active && Settings::StanceEnabled() ? 1.0F : 0.0F;
-            const float step = std::max(0.0F, delta) / kBlendSeconds;
-            g_weight = target > g_weight ? std::min(target, g_weight + step) : std::max(target, g_weight - step);
+            g_weight = Approach(g_weight, target, std::max(0.0F, delta) / kBlendSeconds);
             if (g_weight <= 0.0F) {
                 return std::nullopt;
             }
@@ -188,34 +196,46 @@ namespace SkiingInSkyrim::Pose
             }
             const auto& standing = g_standing.pose;
             const auto  settings = Settings::Stance();
-            const auto  angles = Core::Stance(settings, body.tuck);
-            const auto  turn = Core::LeanFor(settings, body.turnAcceleration, body.gravity, body.edgeRadians);
+            const auto  skate = Core::SkateAt(settings, body.strideSide, body.strideSeconds, Settings::Physics().skatePushSeconds);
+            g_skate = Approach(g_skate, skate.active ? 1.0F : 0.0F, std::max(0.0F, delta) / kSkateBlendSeconds);
+            const float sk = g_skate;
+            auto        angles = Core::Stance(settings, body.tuck);
+            angles.torso += settings.skateLeanDegrees * kRadians * sk;
+            // Skating, the edges are the strides', not a turn's.
+            const float edge = body.edgeRadians * (1.0F - sk);
+            const auto  turn = Core::LeanFor(settings, body.turnAcceleration, body.gravity, edge);
             const float w = g_weight;
             auto        bone = [&](Bone b) -> RE::NiAVObject& { return *g_live.bones[b]; };
 
-            // Skis lie on the ground under where the feet stand, and the ankles sit on them.
+            // Skis lie on the ground under where the feet stand (skating, splayed and pushed out), and the
+            // ankles sit on them.
             const float heading = player->data.angle.z;
             const auto  normal = Skeleton::ToCharacter(body.groundNormal, heading);
             const float yaw = std::remainder(body.yaw - heading, 2.0F * std::numbers::pi_v<float>);
-            std::array<float, 2>         stance{};
+            std::array<Core::SkiPose, 2> skis;
             std::array<RE::NiPoint3, 2>  ankles;
             std::array<RE::NiMatrix3, 2> onSki;
             for (int side = 0; side < 2; ++side) {
+                const float outward = side == 0 ? -1.0F : 1.0F;
+                const auto& leg = skate.legs[side];
                 const auto& foot = standing[kFoot[side]].translate;
-                const auto  ski = Core::PlaceSki(normal, yaw, body.edgeRadians, foot.x, Skis::kHalfWidth);
-                stance[side] = foot.x;
+                auto        ski = Core::PlaceSki(normal, yaw + outward * settings.skateSplayDegrees * kRadians * sk,
+                    edge - outward * leg.edge * sk, foot.x + outward * leg.out * sk, Skis::kHalfWidth);
+                ski.position.z += leg.lift * sk;
+                skis[side] = ski;
                 onSki[side] = Skeleton::FromAxes(ski.right, ski.forward, ski.up);
                 ankles[side] = ToPoint(ski.position) + ToPoint(ski.forward) * foot.y + ToPoint(ski.up) * foot.z;
             }
 
-            // Hips: lowered and moved back so the bent legs keep the feet under them, then swung about the
-            // feet into the turn.
+            // Hips: lowered and moved back so the bent legs keep the feet under them, over the gliding ski
+            // when skating, then swung about the feet into the turn.
             const auto   shift = Core::HipShiftFor(g_standing.thigh, g_standing.shin, angles.hip, angles.ankle);
             const auto   hipsRoll = Roll(turn.hips);
             const auto&  leftFoot = standing[kLeftFoot].translate;
             const auto&  rightFoot = standing[kRightFoot].translate;
             const RE::NiPoint3 pivot{ (leftFoot.x + rightFoot.x) * 0.5F, (leftFoot.y + rightFoot.y) * 0.5F, 0.0F };
-            RE::NiPoint3 hips = standing[kCom].translate + RE::NiPoint3{ 0.0F, shift.forward, shift.up };
+            const float  overSki = skate.hipsOver * (rightFoot.x - leftFoot.x) * 0.5F * sk;
+            RE::NiPoint3 hips = standing[kCom].translate + RE::NiPoint3{ overSki, shift.forward, shift.up };
             hips = pivot + hipsRoll * (hips - pivot);
             Set(bone(kCom), character, hipsRoll * standing[kCom].rotate, &hips, w);
             Set(bone(kPelvis), character, hipsRoll * Pitch(-angles.torso * kPelvisLean) * standing[kPelvis].rotate, nullptr, w);
@@ -256,8 +276,9 @@ namespace SkiingInSkyrim::Pose
             for (int side = 0; side < 2; ++side) {
                 const float        outward = side == 0 ? -1.0F : 1.0F;
                 const RE::NiPoint3 hanging{ outward * std::sin(angles.armOut), 0.0F, -std::cos(angles.armOut) };
-                const auto upperArm = lean * Pitch(angles.armForward) * hanging;
-                const auto forearm = lean * Pitch(angles.armForward + angles.elbow) * hanging;
+                const float swing = -outward * skate.armSwing * settings.skateArmSwingDegrees * kRadians * sk;
+                const auto  upperArm = lean * Pitch(angles.armForward + swing) * hanging;
+                const auto  forearm = lean * Pitch(angles.armForward + swing + angles.elbow) * hanging;
 
                 const auto& upper = standing[kUpperArm[side]];
                 const auto& fore = standing[kForearm[side]];
@@ -271,7 +292,7 @@ namespace SkiingInSkyrim::Pose
                 Set(bone(kHand[side]), character, foreTurn * hand.rotate, nullptr, w);
             }
 
-            return stance;
+            return skis;
         }
 
         struct UpdateAnimation
@@ -280,8 +301,8 @@ namespace SkiingInSkyrim::Pose
             {
                 func(player, delta);
                 const auto body = Skiing::GetBody();
-                const auto stance = Apply(player, body, delta);
-                Skis::Place(player, body, delta, stance ? &*stance : nullptr);
+                const auto skis = Apply(player, body, delta);
+                Skis::Place(player, body, delta, skis ? &*skis : nullptr);
             }
 
             static inline REL::Relocation<decltype(thunk)> func;

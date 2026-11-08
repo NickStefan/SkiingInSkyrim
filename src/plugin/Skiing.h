@@ -62,6 +62,8 @@ namespace SkiingInSkyrim::Skiing
         float              edgeRadians{ 0.0F };  // signed, positive = right edge
         float              turnAcceleration{ 0.0F };  // m/s^2, smoothed, positive right
         float              gravity{ 9.81F };
+        float              strideSide{ 0.0F };      // latest skating stride's leg, +1 right, -1 left, 0 none
+        float              strideSeconds{ -1.0F };  // since it started
         Core::Vec3         groundNormal{ 0.0F, 0.0F, 1.0F };  // world
         RE::TESObjectARMO* skis{ nullptr };
     };

@@ -13,6 +13,16 @@ namespace SkiingInSkyrim::Core
         constexpr float kMaxLeanRadians = 55.0F * kRadians;
         // Never quite straight, so the knee keeps a definite direction to bend.
         constexpr float kMaxReach = 0.999F;
+        // After the push, seconds to bring the leg back, and how long the skating stance lasts after that
+        // without another stride.
+        constexpr float kRecoverSeconds = 0.3F;
+        constexpr float kSkateHoldSeconds = 0.8F;
+
+        float Smoothstep(float x)
+        {
+            const float t = std::clamp(x, 0.0F, 1.0F);
+            return t * t * (3.0F - 2.0F * t);
+        }
 
         Vec3 Add(Vec3 a, Vec3 b) { return { a.x + b.x, a.y + b.y, a.z + b.z }; }
         Vec3 Sub(Vec3 a, Vec3 b) { return { a.x - b.x, a.y - b.y, a.z - b.z }; }
@@ -55,6 +65,34 @@ namespace SkiingInSkyrim::Core
             .hips = std::clamp(hips, -kMaxLeanRadians, kMaxLeanRadians),
             .upper = std::clamp(lean * (1.0F - settings.upperBodyUpright), -kMaxLeanRadians, kMaxLeanRadians),
         };
+    }
+
+    SkatePose SkateAt(const StanceSettings& settings, float side, float seconds, float pushSeconds) noexcept
+    {
+        SkatePose pose;
+        const float push = std::max(pushSeconds, 1e-3F);
+        if (side == 0.0F || seconds < 0.0F || seconds >= push + kRecoverSeconds + kSkateHoldSeconds) {
+            return pose;
+        }
+        pose.active = true;
+        const int   leg = side > 0.0F ? 1 : 0;
+        const float s = side > 0.0F ? 1.0F : -1.0F;
+        const float edge = settings.skateEdgeDegrees * kRadians;
+        const float pushed = Smoothstep(seconds / push);
+        auto&       pushing = pose.legs[leg];
+        if (seconds < push) {
+            pushing.out = settings.skatePushOut * pushed;
+            pushing.edge = edge * Smoothstep(seconds / (push * 0.3F));
+        } else {
+            const float back = std::min(1.0F, (seconds - push) / kRecoverSeconds);
+            pushing.out = settings.skatePushOut * (1.0F - Smoothstep(back));
+            pushing.lift = settings.skateLift * std::sin(std::numbers::pi_v<float> * back);
+            pushing.edge = edge * (1.0F - back);
+        }
+        // The weight starts over the pushing ski (the last stride's glide, alternating) and moves across.
+        pose.hipsOver = s * (1.0F - 2.0F * pushed);
+        pose.armSwing = s * (2.0F * pushed - 1.0F);
+        return pose;
     }
 
     Leg SolveLeg(Vec3 hip, Vec3 ankleTarget, float thighLength, float shinLength, Vec3 bendToward) noexcept

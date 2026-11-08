@@ -428,6 +428,8 @@ namespace SkiingInSkyrim::Skiing
             .edgeRadians = step.edgeDegrees * std::numbers::pi_v<float> / 180.0F,
             .turnAcceleration = g_turnAcceleration,
             .gravity = physics.gravity,
+            .strideSide = step.strideSide,
+            .strideSeconds = step.strideSeconds,
             .groundNormal = grounded && ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F },
             .skis = skis,
         });
