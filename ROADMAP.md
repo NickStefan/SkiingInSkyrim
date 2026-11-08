@@ -11,14 +11,17 @@ Rough order of work. Things move up or down as playtesting shows what matters.
   away; powder adds to the limiter.
 - Carve pump: a clean carve held through a turn keeps or builds speed, never more than cancelling drag.
 - Skating on flat and gentle uphill ground: stick forward, alternate trigger squeezes, push spread over each stride.
-- Powder setting, softened fall damage, steep-slope height jitter fix.
+- Powder setting, steep-slope height jitter fix.
+- Fall damage on skis: steep fast descents no longer count as one long fall (the fall restarts no higher than
+  the slope just left would make it). Powder absorbs a set depth of fall.
 - Skis as a wearable, craftable item (ESP); wearing them turns skiing on. Ski models placed under the feet.
 - Procedural ski stance, no animation files: knee bend, forward lean, tuck, lean into turns with hip angulation,
   leg IK to the skis, skating strides (V stance, edged push, weight shift, arm swing). HDT-SMP safe.
 - Skid stance: skidding, the upper body turns toward the direction of travel while the legs stay with the skis.
 - Airs: small hops keep the stance; past a set drop the game's (or OAR's) fall animation takes over.
 - Stamina: hard carving and skating strides cost stamina; out of it, edges are weaker and strides don't start.
-- Debug overlay: fall line, ski and travel arrows, edge gauge, pivot, lean, skating, mph.
+- Debug overlay: fall line, ski and travel arrows, edge gauge, slope, skating, mph.
+- Loads on SE 1.5.97 and AE (Address Library); refuses to load on VR.
 
 Controller is the intended way to play; keyboard and mouse work but are rougher. True Directional Movement is a
 soft requirement (see Later).
@@ -26,7 +29,8 @@ soft requirement (see Later).
 ## Next: release
 
 - [ ] Footsteps: check whether the walk/run animation under the stance still plays footstep sounds; silence them.
-- [ ] Sounds: edge scrape that grows with skidding, carve hiss with speed, powder whoosh, landings.
+- [ ] Sounds: edge scrape that grows with skidding, carve hiss with speed, powder whoosh, landings. Pick them by
+      surface once surfaces (see Later) exist.
 - [ ] README: what the mod does, controls (controller first), requirements (TDM recommended), install, "works best
       on controller".
 - [ ] Push the repository to GitHub.
@@ -35,12 +39,24 @@ soft requirement (see Later).
 
 - [ ] Ski poles, then pole plants at turn transitions and while skating.
 - [ ] Landing absorption: the legs soak up the landing. Optional; powder already hides most small landings.
-- [ ] Detect snowy ground (and deep snow from snow-deformation mods) to switch powder on and off automatically.
-      Weigh against compatibility.
+- [ ] Surfaces: skis work best on snow but never stop working. Extra drag per material on top of the usual drag,
+      so steepness still wins: snow as now; ice faster with weaker edges; grass and mud slower; dirt, sand and
+      gravel slower still; stone and wood (roads, towns) heavy, mostly pushing on the flat. Unknown material counts
+      as snow; blend changes over a short distance; keep the last surface in the air. One setting, "non-snow
+      friction" (0 = surfaces ignored). Later: powder only on snow, stone scrape vs snow hiss sounds, skating on
+      grass costs more. Show the material underfoot on the overlay first to check readings, Seasons included.
+      The character controller's surfaceMaterial (what footsteps use) gives the material underfoot, rocks
+      included; TES::GetLandMaterialType gives the landscape's at any point. Don't look materials up by shape
+      key: that crashed inside compressed meshes.
+- [ ] Deep snow: detect it from snow-deformation mods to switch powder on and off automatically. Weigh against
+      compatibility.
 - [ ] Powder planing: in deep (snow-deformation) powder the skis, and the body with them, ride deep when slow and
       rise toward the snow surface with speed. Skis are placed by the DLL, so the height is ours to set; the body
       needs a visual-only lift that doesn't disturb the height smoothing. Pairs with snowy-ground detection.
-- [ ] Revisit fall damage if landings still feel punishing.
+- [ ] Impact damage (one system for landings and crashes): health lost by how much speed the world takes away
+      at once, so a flat landing or a tree hurts and a landing along the slope or a scrape barely does, on the
+      game's fall-damage curve. Logging it now (no damage yet) to tune; then deal it ourselves and stop the
+      game's own fall damage on skis. Settings: on/off, threshold, damage scale.
 - [ ] First person: turning doesn't work. TDM accepts our yaw but only applies it in its third-person camera,
       and we zero the game's rotation, so look turning is dropped too. Setting the heading directly fixes turning
       but breaks third person (it skips TDM's camera counter-rotation, which the chase camera relies on), and the

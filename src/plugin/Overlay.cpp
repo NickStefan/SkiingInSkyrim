@@ -114,17 +114,6 @@ namespace SkiingInSkyrim::Overlay
             const ImVec2 end{ std::cos(edge) * kHalf, std::sin(edge) * kHalf };
             Draw::AddLine(list, Add(center, Scale(end, -1.0F)), Add(center, end), data.skidding ? kSkid : kGrip, 5.0F);
         }
-
-        // Applied pivot as a bar: centre is none, ends are the full pivot left/right.
-        void PivotBar(ImGuiMCP::ImDrawList* list, ImVec2 center, const Skiing::OverlayData& data)
-        {
-            constexpr float kHalf = 45.0F;
-            Draw::AddRect(list, Add(center, { -kHalf, -4.0F }), Add(center, { kHalf, 4.0F }), kFaint, 2.0F, 0, 1.0F);
-            const float fraction = data.maxPivotDegrees > 0.0F ? data.pivotDegrees / data.maxPivotDegrees : 0.0F;
-            const float x = std::clamp(fraction, -1.0F, 1.0F) * kHalf;
-            Draw::AddRectFilled(list, Add(center, { std::min(0.0F, x), -4.0F }), Add(center, { std::max(0.0F, x), 4.0F }),
-                kSki, 2.0F, 0);
-        }
     }
 
     void __stdcall Render()
@@ -139,20 +128,16 @@ namespace SkiingInSkyrim::Overlay
         const auto data = Skiing::GetOverlay();
         const ImVec2 origin{ kLeft, kTop };
         if (!data.active) {
-            Draw::AddRectFilled(list, origin, Add(origin, { kWidth, 28.0F }), kBackground, 6.0F, 0);
-            Text(list, Add(origin, { 10.0F, 6.0F }), kText, fmt::format("Skiing in Skyrim: {}", data.inactiveReason));
             return;
         }
 
         Draw::AddRectFilled(list, origin, Add(origin, { kWidth, kHeight }), kBackground, 6.0F, 0);
         Text(list, Add(origin, { 10.0F, 6.0F }), data.skating ? kSkate : kFaintText, data.skating ? "skating" : "skiing");
         Compass(list, Add(origin, { 95.0F, 95.0F }), data);
-        Text(list, Add(origin, { 10.0F, 168.0F }), kText,
-            fmt::format("{:.0f} mph", Core::Length(data.velocity) * kMphPerMetrePerSecond));
         EdgeGauge(list, Add(origin, { 240.0F, 55.0F }), data);
-        Text(list, Add(origin, { 205.0F, 85.0F }), kText, fmt::format("edge {:+.0f}", data.edgeDegrees));
-        PivotBar(list, Add(origin, { 240.0F, 125.0F }), data);
-        Text(list, Add(origin, { 205.0F, 135.0F }), kText, fmt::format("pivot {:+.0f}", data.pivotDegrees));
-        Text(list, Add(origin, { 205.0F, 160.0F }), kText, fmt::format("lean {:.0f}%", data.tuck * 100.0F));
+        Text(list, Add(origin, { 205.0F, 112.0F }), kText,
+            fmt::format("{:.0f} mph", Core::Length(data.velocity) * kMphPerMetrePerSecond));
+        Text(list, Add(origin, { 205.0F, 136.0F }), data.grounded ? kText : kFaintText,
+            data.grounded ? fmt::format("{:.0f}\u00B0", data.slopeDegrees) : std::string("airborne"));
     }
 }

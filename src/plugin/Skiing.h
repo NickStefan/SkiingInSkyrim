@@ -22,7 +22,6 @@ namespace SkiingInSkyrim::Skiing
         float                observedSpeed{ 0.0F };
         bool                 hugging{ false };  // holding the skier to the slope over a crest this frame
         float                fallMetres{ -1.0F };  // off the ground: the fall the game will count, if known
-        float                landingSlopeDegrees{ -1.0F };  // off the ground: the slope it will land on, if in reach
         float                heightCorrection{ 0.0F };  // game units the position was lowered this frame
     };
 
@@ -33,7 +32,6 @@ namespace SkiingInSkyrim::Skiing
     struct OverlayData
     {
         bool        active{ false };
-        const char* inactiveReason{ "no skis" };
         bool        grounded{ true };
         float       yaw{ 0.0F };
         Core::Vec2  velocity{};
@@ -41,13 +39,10 @@ namespace SkiingInSkyrim::Skiing
         float       slopeDegrees{ 0.0F };
         float       edgeDegrees{ 0.0F };
         float       maxEdgeDegrees{ 0.0F };
-        float       pivotDegrees{ 0.0F };  // signed: positive twists toward the right edge
-        float       maxPivotDegrees{ 0.0F };
         float       slipDegrees{ 0.0F };
         float       gripLimit{ 0.0F };
         bool        skidding{ false };
         bool        parked{ false };
-        float       tuck{ 0.0F };  // forward lean, 0..1
         bool        skating{ false };
     };
 
