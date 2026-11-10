@@ -53,10 +53,27 @@ namespace SkiingInSkyrim::Settings
     using StanceField = FloatFieldOf<Core::StanceSettings>;
     using StanceSwitch = BoolFieldOf<Core::StanceSettings>;
 
-    [[nodiscard]] std::span<const FloatField>   PhysicsFields() noexcept;
-    [[nodiscard]] std::span<const BoolField>    PhysicsSwitches() noexcept;
-    // Part of the physics settings, but shown and saved with the general settings.
-    [[nodiscard]] std::span<const FloatField>   StaminaFields() noexcept;
+    // Menu pages the physics settings are shown on.
+    enum class Page
+    {
+        Controls,
+        Speed,
+        Stamina,
+        Impacts,
+    };
+
+    // Physics settings shown together under a heading (none if empty), and saved in one INI section.
+    struct PhysicsGroup
+    {
+        Page                        page;
+        const char*                 section;
+        const char*                 title;
+        std::span<const BoolField>  switches;
+        std::span<const FloatField> fields;
+        const char*                 intro{ nullptr };  // shown under the heading
+    };
+
+    [[nodiscard]] std::span<const PhysicsGroup> PhysicsGroups() noexcept;
     [[nodiscard]] std::span<const CameraField>  CameraFields() noexcept;
     [[nodiscard]] std::span<const StanceField>  StanceFields() noexcept;
     [[nodiscard]] std::span<const StanceSwitch> StanceSwitches() noexcept;

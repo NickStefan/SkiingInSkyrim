@@ -79,6 +79,23 @@ namespace SkiingInSkyrim::Skiing
             g_command = command;
         }
 
+        // Stopped, with the skis still on: the game stands the player still (a conversation, including one
+        // an NPC starts) or plays its own animation (bleeding out).
+        constexpr const char* kConversation = "conversation";
+        constexpr const char* kDowned = "downed";
+        constexpr const char* kWater = "water";
+
+        // Bleeding out, either the game's own way or through the animation alone, as revive mods such as
+        // PlayerSelfRevive do.
+        bool Downed(RE::PlayerCharacter* player)
+        {
+            if (player->AsActorState()->IsBleedingOut()) {
+                return true;
+            }
+            bool bleeding = false;
+            return player->GetGraphVariableBool("IsBleedingOut", bleeding) && bleeding;
+        }
+
         const char* InactiveReason(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
             const RE::TESObjectARMO* skis)
         {
@@ -91,12 +108,15 @@ namespace SkiingInSkyrim::Skiing
             if (!controller) {
                 return "no character controller";
             }
+            if (Downed(player)) {
+                return kDowned;
+            }
             const auto* state = player->AsActorState();
             if (state->GetLifeState() != RE::ACTOR_LIFE_STATE::kAlive) {
                 return "not alive";
             }
             if (player->IsInWater() || state->IsSwimming()) {
-                return "water";
+                return kWater;
             }
             if (player->IsOnMount()) {
                 return "mounted";
@@ -109,6 +129,9 @@ namespace SkiingInSkyrim::Skiing
             }
             if (state->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) {
                 return "furniture";
+            }
+            if (auto* ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)) {
+                return kConversation;
             }
             return nullptr;
         }
@@ -188,6 +211,42 @@ namespace SkiingInSkyrim::Skiing
         // Set when the player jumps; cleared once back on the ground.
         bool g_jumped = false;
 
+        // Off the ground: the engine's velocity over the last few frames, to judge the landing by and carry into
+        // it (the speed in the air is mostly falling, which the model doesn't follow). Several, because the engine
+        // stops the fall the frame it touches down but only says it's supported the frame after.
+        struct AirVelocities
+        {
+            static constexpr std::size_t kFrames = 3;
+            std::array<Core::Vec3, kFrames> recent{};
+            std::size_t                     count{ 0 };
+            Core::Vec3                      takeoff{};  // the first in the air
+
+            void Add(const Core::Vec3& velocity)
+            {
+                if (count == 0) {
+                    takeoff = velocity;
+                }
+                std::move_backward(recent.begin(), recent.end() - 1, recent.end());
+                recent[0] = velocity;
+                count = std::min(count + 1, kFrames);
+            }
+            void ReplaceLatest(const Core::Vec3& velocity)
+            {
+                if (count > 0) {
+                    recent[0] = velocity;
+                }
+            }
+            // The one meeting a slope with this normal hardest: what it was going before the touchdown.
+            [[nodiscard]] Core::Vec3 Hardest(const Core::Vec3& normal) const
+            {
+                return *std::max_element(recent.begin(), recent.begin() + count, [&](const auto& a, const auto& b) {
+                    return Core::SpeedInto(a, normal) < Core::SpeedInto(b, normal);
+                });
+            }
+            void Reset() { count = 0; }
+        };
+        AirVelocities g_airVelocity;
+
         // Briefly unsupported after skiing over a crest (not a jump): keep the skier on the slope. Returns the
         // velocity set, if it was.
         std::optional<Core::Vec3> HugGround(RE::bhkCharacterController* controller, const Core::Vec3& velocity,
@@ -208,41 +267,30 @@ namespace SkiingInSkyrim::Skiing
             return hugged;
         }
 
-        // Which units the controller's fall start height is in, once seen: 1 for game units, the Havok world
-        // scale for Havok units.
-        std::optional<float> g_fallUnits;
-
-        // Skyrim's fall damage counts the height dropped since leaving the ground, so skiing fast down a steep
-        // slope (briefly off the snow many times a second) would count as one long fall. On skis what hurts is
-        // how hard you meet the slope, so while off the ground the fall is restarted no higher than would land
-        // as hard as meeting the slope just left at the current velocity. Never more than the game's own.
-        void SoftenFall(RE::bhkCharacterController* controller, const RE::NiPoint3& position, const Core::Vec3& velocity,
-            const Core::GroundEstimate& ground, const Core::SkiSettings& physics)
+        // Skyrim's fall damage counts the height dropped since leaving the ground, which on skis is wrong both
+        // ways: skiing fast down a steep slope (briefly off the snow many times a second) counts as one long
+        // fall, and a big air onto a steep face hurts however softly it lands. So on skis the game counts no
+        // fall at all: while off the ground the fall restarts where the skier is, every frame. The controller
+        // keeps that height in game units (seen on 1.6.640); the first time off the ground says if it doesn't.
+        void CancelFall(RE::bhkCharacterController* controller, const RE::NiPoint3& position)
         {
-            g_debug.fallMetres = -1.0F;
             if (controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported) {
                 return;
             }
-            if (!g_fallUnits) {
-                // Decide from the height the game recorded at takeoff, once it's far enough from 0 to tell.
+            static bool checked = false;
+            if (!checked && std::fabs(position.z) > 500.0F && controller->fallStartHeight != 0.0F) {
+                checked = true;
                 const float start = controller->fallStartHeight;
-                const float havok = RE::bhkWorld::GetWorldScale();
-                if (std::fabs(position.z) < 500.0F || start == 0.0F) {
-                    return;
+                if (std::fabs(start - position.z) > std::fabs(start - position.z * RE::bhkWorld::GetWorldScale())) {
+                    spdlog::warn("fall start height looks like Havok units (start={:.1f}, z={:.1f}): game fall "
+                                 "damage on skis may be wrong in this game version", start, position.z);
                 }
-                g_fallUnits = std::fabs(start - position.z) <= std::fabs(start - position.z * havok) ? 1.0F : havok;
-                spdlog::info("fall start height is in {} units (start={:.1f}, z={:.1f})",
-                    *g_fallUnits == 1.0F ? "game" : "Havok", start, position.z);
             }
-            const auto  normal = ground.hasNormal ? ground.normal : Core::Vec3{ 0.0F, 0.0F, 1.0F };
-            const float metres = Core::LandingHeight(velocity, normal, physics);
-            const float soft = (position.z + metres * kUnitsPerMetre) * *g_fallUnits;
-            controller->fallStartHeight = std::min(controller->fallStartHeight, soft);
-            g_debug.fallMetres = (controller->fallStartHeight / *g_fallUnits - position.z) / kUnitsPerMetre;
+            controller->fallStartHeight = position.z;
         }
 
-        // Impacts (log only for now): speed the world took away all at once, what it was, and the damage the
-        // game's fall-damage curve would give it.
+        // Impacts: speed the world took away all at once. Logged, and crashes into something steep hurt (landings
+        // are judged at touchdown instead, see LandingDamage).
         Core::ImpactTracker  g_impacts;
         std::optional<float> g_impactHealth;  // health the frame before an impact started
         std::optional<float> g_lastHealth;
@@ -251,6 +299,10 @@ namespace SkiingInSkyrim::Skiing
         constexpr float kTeleportUnits = 1000.0F;
         // What was hit is looked for this far along the speed lost, from the body's centre.
         constexpr float kImpactProbeUnits = 150.0F;
+        // Lost at least this much sideways (m/s), the ray looks sideways for what was hit, not along the loss.
+        constexpr float kSidewaysLoss = 1.0F;
+
+        float Degrees(float radians) { return radians * 180.0F / std::numbers::pi_v<float>; }
 
         std::string_view LayerName(RE::COL_LAYER layer)
         {
@@ -268,15 +320,33 @@ namespace SkiingInSkyrim::Skiing
             }
         }
 
+        // Things you can crash into: not people or loose objects.
+        bool Solid(RE::COL_LAYER layer)
+        {
+            switch (layer) {
+            case RE::COL_LAYER::kClutter:
+            case RE::COL_LAYER::kProps:
+            case RE::COL_LAYER::kBiped:
+            case RE::COL_LAYER::kCharController: return false;
+            default:                             return true;
+            }
+        }
+
+        struct SurfaceHit
+        {
+            RE::COL_LAYER layer;
+            float         slopeDegrees;
+        };
+
         // What's along the given direction (unit) from the body's centre: rays hit what the player's character
         // controller collides with, but not the player.
-        std::string HitAlong(RE::PlayerCharacter* player, RE::bhkCharacterController* controller, float bodyZ,
-            const Core::Vec3& direction)
+        std::optional<SurfaceHit> Probe(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
+            float bodyZ, const Core::Vec3& direction)
         {
             auto* cell = player->GetParentCell();
             auto* world = cell ? cell->GetbhkWorld() : nullptr;
             if (!world) {
-                return "?";
+                return std::nullopt;
             }
             RE::CFilter own;
             controller->GetCollisionFilterInfo(own);
@@ -292,38 +362,264 @@ namespace SkiingInSkyrim::Skiing
             world->PickObject(pick);
             const auto* collidable = pick.rayOutput.rootCollidable;
             if (!pick.rayOutput.HasHit() || !collidable) {
-                return "nothing found";
+                return std::nullopt;
             }
-            const auto  normal = ToVec3(pick.rayOutput.normal);
-            return fmt::format("{} at {:.0f}", LayerName(collidable->GetCollisionLayer()),
-                std::acos(std::clamp(normal.z, -1.0F, 1.0F)) * 180.0F / std::numbers::pi_v<float>);
+            const auto normal = ToVec3(pick.rayOutput.normal);
+            return SurfaceHit{ collidable->GetCollisionLayer(), Degrees(std::acos(std::clamp(normal.z, -1.0F, 1.0F))) };
         }
 
-        // The game's fall damage for a fall of this many game units, assuming its curve is
-        // ((height - fJumpFallHeightMin) * fJumpFallHeightMult) ^ fJumpFallHeightExponent.
-        float GameFallDamage(float units)
+        std::string HitName(const std::optional<SurfaceHit>& hit)
+        {
+            return hit ? fmt::format("{} at {:.0f}", LayerName(hit->layer), hit->slopeDegrees) : std::string("nothing found");
+        }
+
+        Core::FallCurve GameFallCurve()
         {
             auto* settings = RE::GameSettingCollection::GetSingleton();
             const auto value = [&](const char* name, float fallback) {
                 auto* setting = settings ? settings->GetSetting(name) : nullptr;
                 return setting ? setting->GetFloat() : fallback;
             };
-            const float minimum = value("fJumpFallHeightMin", 600.0F);
-            const float mult = value("fJumpFallHeightMult", 0.1F);
-            const float exponent = value("fJumpFallHeightExponent", 1.65F);
-            return units > minimum ? std::pow((units - minimum) * mult, exponent) : 0.0F;
+            return { value("fJumpFallHeightMin", 600.0F), value("fJumpFallHeightMult", 0.1F),
+                value("fJumpFallHeightExponent", 1.65F) };
         }
 
         void LogFallSettings()
         {
-            auto* settings = RE::GameSettingCollection::GetSingleton();
-            const auto value = [&](const char* name) {
-                auto* setting = settings ? settings->GetSetting(name) : nullptr;
-                return setting ? fmt::format("{:.3f}", setting->GetFloat()) : std::string("?");
-            };
-            spdlog::info("game fall damage settings: fJumpFallHeightMin={} fJumpFallHeightMult={} "
-                         "fJumpFallHeightExponent={}",
-                value("fJumpFallHeightMin"), value("fJumpFallHeightMult"), value("fJumpFallHeightExponent"));
+            const auto curve = GameFallCurve();
+            spdlog::info("game fall damage curve: fJumpFallHeightMin={:.3f} fJumpFallHeightMult={:.3f} "
+                         "fJumpFallHeightExponent={:.3f}",
+                curve.minimumUnits, curve.mult, curve.exponent);
+        }
+
+        // Health damage for a hit as hard as falling this many metres, scaled.
+        float ImpactDamage(float metres, float scale)
+        {
+            return std::max(0.0F, scale) * Core::FallDamage(metres * kUnitsPerMetre, GameFallCurve());
+        }
+
+        void Hurt(RE::PlayerCharacter* player, float damage)
+        {
+            if (damage > 0.0F) {
+                player->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kHealth, damage);
+            }
+        }
+
+        // Set once a tumble is asked for, until skiing starts again, so one crash throws the skier once.
+        bool g_tumbling = false;
+        // From a tumble until back on their feet on solid ground for kTumbleSettleSeconds: skiing is off by then
+        // (ragdoll, skis off), so the game would count the whole tumble down the mountain as one fall.
+        bool                 g_tumbleGuard = false;
+        float                g_tumbleSettled = 0.0F;
+        float                g_tumbleSeconds = 0.0F;
+        std::optional<float> g_tumbleHealth;
+        constexpr float      kTumbleSettleSeconds = 1.0F;
+        float g_tumbleRagdollSeconds = 0.0F;
+        float g_tumbleLogSeconds = 0.0F;
+        // Once the slide is over the ragdoll's speed across the ground (and up, and its spin) falls by e every
+        // 1/kTumbleBrakeRate seconds, and to nothing below kTumbleStopSpeed (Havok units a second, about m/s).
+        // Falling is left to gravity, or a body still in the air would hang there.
+        constexpr float kTumbleBrakeRate = 15.0F;
+        constexpr float kTumbleStopSpeed = 0.5F;
+        // The push comes from this far behind the skier (game units), along the way they were going.
+        constexpr float kTumblePushUnits = 50.0F;
+
+        // Once: the game's own settings that might decide how long a knockdown lasts.
+        void LogKnockdownSettings()
+        {
+            static bool logged = false;
+            auto*       settings = RE::GameSettingCollection::GetSingleton();
+            if (logged || !settings) {
+                return;
+            }
+            logged = true;
+            for (auto& item : settings->settings) {
+                const char*  name = item.first;
+                RE::Setting* setting = item.second;
+                if (!name || !setting) {
+                    continue;
+                }
+                std::string lower(name);
+                std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return std::tolower(c); });
+                if (lower.find("ragdoll") == std::string::npos && lower.find("knock") == std::string::npos &&
+                    lower.find("getup") == std::string::npos) {
+                    continue;
+                }
+                switch (setting->GetType()) {
+                case RE::Setting::Type::kFloat:   spdlog::info("game setting {} = {}", name, setting->GetFloat()); break;
+                case RE::Setting::Type::kInteger: spdlog::info("game setting {} = {}", name, setting->GetInteger()); break;
+                case RE::Setting::Type::kBool:    spdlog::info("game setting {} = {}", name, setting->GetBool()); break;
+                default:                          spdlog::info("game setting {}", name); break;
+                }
+            }
+        }
+
+        struct RagdollSpeed
+        {
+            float fastest{ 0.0F };        // m/s
+            float fastestAcross{ 0.0F };  // m/s, horizontal
+        };
+
+        // Brakes every body in the player's ragdoll by factor (1 leaves it), except for falling. Returns the
+        // speeds before.
+        RagdollSpeed BrakeRagdoll(RE::PlayerCharacter* player, float factor)
+        {
+            auto* root = player->Get3D(false);
+            auto* cell = player->GetParentCell();
+            auto* world = cell ? cell->GetbhkWorld() : nullptr;
+            RagdollSpeed speeds;
+            if (!root || !world) {
+                return speeds;
+            }
+            RE::BSWriteLockGuard lock(world->worldLock);
+            RE::BSVisit::TraverseScenegraphCollision(root, [&](RE::bhkNiCollisionObject* object) {
+                auto* body = netimmerse_cast<RE::bhkRigidBody*>(object->body.get());
+                auto* rigid = body ? body->GetRigidBody() : nullptr;
+                if (!rigid) {
+                    return RE::BSVisit::BSVisitControl::kContinue;
+                }
+                const auto& motion = rigid->motion;
+                const auto  velocity = ToVec3(motion.linearVelocity);
+                const float across = Core::HorizontalLength(velocity);
+                speeds.fastest = std::max(speeds.fastest, Core::Length(velocity));
+                speeds.fastestAcross = std::max(speeds.fastestAcross, across);
+                if (factor >= 1.0F) {
+                    return RE::BSVisit::BSVisitControl::kContinue;
+                }
+                const bool  moving = across > 1e-3F || velocity.z > 1e-3F;
+                const float spin = motion.angularVelocity.Length3();
+                if (moving) {
+                    const float k = across * factor < kTumbleStopSpeed ? 0.0F : factor;
+                    const float up = velocity.z > 0.0F ? (velocity.z * factor < kTumbleStopSpeed ? 0.0F : velocity.z * factor) :
+                                                         velocity.z;
+                    body->SetLinearVelocity(RE::hkVector4(velocity.x * k, velocity.y * k, up, 0.0F));
+                }
+                if (spin > 1e-3F) {
+                    body->SetAngularVelocity(motion.angularVelocity * RE::hkVector4(spin * factor < kTumbleStopSpeed ? 0.0F : factor));
+                }
+                return RE::BSVisit::BSVisitControl::kContinue;
+            });
+            return speeds;
+        }
+
+        bool Alive(RE::PlayerCharacter* player)
+        {
+            return player->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive &&
+                   player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0F;
+        }
+
+        // A hard hit throws the skier into the game's own knockdown (ragdoll, then getting up), pushed on the way
+        // they were going. Queued for after the player's update rather than in the middle of it.
+        void Tumble(RE::PlayerCharacter* player, const Core::Vec3& travel, float hit, float minSpeed, bool hurt,
+            const Core::SkiSettings& physics)
+        {
+            if (!physics.crashRagdoll || hit < minSpeed || g_tumbling || !Alive(player)) {
+                return;
+            }
+            g_tumbling = true;
+            g_tumbleGuard = true;
+            g_tumbleSettled = 0.0F;
+            g_tumbleSeconds = 0.0F;
+            g_tumbleHealth = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+            g_tumbleRagdollSeconds = 0.0F;
+            g_tumbleLogSeconds = 0.0F;
+            LogKnockdownSettings();
+            const float      horizontal = Core::HorizontalLength(travel);
+            const Core::Vec3 direction = horizontal > 1e-3F ? Core::Vec3{ travel.x / horizontal, travel.y / horizontal, 0.0F } :
+                                                              Core::Vec3{};
+            const float      magnitude = std::max(0.0F, physics.ragdollThrow) * Core::Length(travel);
+            const bool       removeSkis = hurt ? physics.hurtTumbleRemovesSkis : physics.harmlessTumbleRemovesSkis;
+            const float      kept = std::clamp(physics.ragdollSpeedKept, 0.0F, 1.0F);
+            spdlog::info("tumble: hit {:.1f}m/s at {:.0f}mph, throw {:.1f}, keeping {:.0f}% of the speed{}", hit,
+                Core::Length(travel) * 2.23694F, magnitude, kept * 100.0F, removeSkis ? ", skis off" : "");
+            SKSE::GetTaskInterface()->AddTask([direction, magnitude, removeSkis, kept] {
+                auto* player = RE::PlayerCharacter::GetSingleton();
+                auto* process = player ? player->GetActorRuntimeData().currentProcess : nullptr;
+                if (!process || !process->high || !Alive(player)) {
+                    return;
+                }
+                if (auto* controller = player->GetCharController()) {
+                    RE::hkVector4 velocity;
+                    controller->GetLinearVelocityImpl(velocity);
+                    const auto before = ToVec3(velocity);
+                    controller->SetLinearVelocityImpl(
+                        RE::hkVector4(before.x * kept, before.y * kept, before.z * kept, 0.0F));
+                    spdlog::info("tumble: body speed {:.1f} -> {:.1f}m/s", Core::Length(before),
+                        Core::Length(before) * kept);
+                }
+                const auto position = player->GetPosition();
+                const RE::NiPoint3 from{ position.x - direction.x * kTumblePushUnits,
+                    position.y - direction.y * kTumblePushUnits, position.z };
+                process->KnockExplosion(player, from, magnitude);
+                if (auto* skis = removeSkis ? Skis::Worn(player) : nullptr) {
+                    RE::ActorEquipManager::GetSingleton()->UnequipObject(player, skis);
+                }
+            });
+        }
+
+        // While guarding a tumble, the game counts no fall: the fall restarts where the player is every frame.
+        void GuardTumble(RE::PlayerCharacter* player, RE::bhkCharacterController* controller, float delta)
+        {
+            if (!g_tumbleGuard || !controller) {
+                return;
+            }
+            controller->fallStartHeight = player->GetPosition().z;
+            g_tumbleSeconds += std::max(0.0F, delta);
+            if (player->IsInRagdollState()) {
+                const float slide = Settings::Physics().tumbleSlideSeconds;
+                g_tumbleRagdollSeconds += std::max(0.0F, delta);
+                const bool  braking = g_tumbleRagdollSeconds >= slide;
+                const auto  speeds =
+                    BrakeRagdoll(player, braking ? std::exp(-kTumbleBrakeRate * std::max(0.0F, delta)) : 1.0F);
+                if (g_tumbleSeconds >= g_tumbleLogSeconds) {
+                    g_tumbleLogSeconds = g_tumbleSeconds + 0.5F;
+                    spdlog::info("tumble {:.1f}s: ragdoll fastest {:.1f}m/s ({:.1f} across){}", g_tumbleSeconds,
+                        speeds.fastest, speeds.fastestAcross, braking ? ", braking" : "");
+                }
+            }
+            const bool down = player->IsInRagdollState() ||
+                              player->AsActorState()->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
+            const bool supported =
+                controller->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported;
+            if (down || !supported) {
+                g_tumbleSettled = 0.0F;
+                return;
+            }
+            g_tumbleSettled += std::max(0.0F, delta);
+            if (g_tumbleSettled >= kTumbleSettleSeconds) {
+                g_tumbleGuard = false;
+                spdlog::info("tumble over after {:.1f}s | health {:.0f} -> {:.0f}", g_tumbleSeconds,
+                    g_tumbleHealth.value_or(0.0F), player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
+            }
+        }
+
+        // Touching down with this velocity (the last in the air) on a slope with this normal.
+        void LandingDamage(RE::PlayerCharacter* player, const Core::Vec3& velocity, const Core::Vec3& takeoff,
+            const Core::Vec3& normal, const Core::SkiSettings& physics)
+        {
+            const float slope =
+                Degrees(std::acos(std::clamp(normal.z / std::max(Core::Length(normal), 1e-4F), -1.0F, 1.0F)));
+            if (slope >= physics.crashMinSurfaceDegrees) {
+                return;  // a face that steep is a crash, judged as one
+            }
+            const float into = Core::SpeedInto(velocity, normal);
+            const float takeoffInto = Core::SpeedInto(takeoff, normal);
+            const float metres = Core::LandingFallMetres(into, takeoffInto, physics.gravity);
+            const float cushioned = physics.powder ? std::max(0.0F, metres - physics.powderLandingMetres) : metres;
+            const float damage = physics.impactDamage ? ImpactDamage(cushioned, physics.landingDamageScale) : 0.0F;
+            if (metres < 3.0F && damage <= 0.0F) {
+                return;
+            }
+            auto*       values = player->AsActorValueOwner();
+            const float health = values->GetActorValue(RE::ActorValue::kHealth);
+            Hurt(player, damage);
+            // Powder takes its share of the tumble too: what's left is as hard as hitting at this speed.
+            Tumble(player, velocity, std::sqrt(2.0F * std::max(0.0F, physics.gravity) * cushioned),
+                physics.landingTumbleSpeed, damage > 0.0F, physics);
+            spdlog::info("landing: {:.1f}m/s into a {:.0f} degree slope ({:.1f} at takeoff) at {:.0f}mph | like a "
+                         "{:.1f}m fall ({:.1f}m after powder) -> damage {:.0f} | health {:.0f} -> {:.0f}",
+                into, slope, takeoffInto, Core::Length(velocity) * 2.23694F, metres, cushioned, damage, health,
+                values->GetActorValue(RE::ActorValue::kHealth));
         }
 
         void TrackImpacts(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
@@ -351,18 +647,26 @@ namespace SkiingInSkyrim::Skiing
                 return;
             }
             const float lost = Core::Length(impact->lost);
-            const float metres = Core::EquivalentFallMetres(lost, physics.gravity);
-            const float cushioned = physics.powder ? std::max(0.0F, metres - physics.powderLandingMetres) : metres;
+            const float sideways = Core::HorizontalLength(impact->lost);
+            const auto  direction = sideways >= kSidewaysLoss ?
+                                        Core::Vec3{ impact->lost.x / sideways, impact->lost.y / sideways, 0.0F } :
+                                        Core::Vec3{ impact->lost.x / lost, impact->lost.y / lost, impact->lost.z / lost };
+            const auto  hit = Probe(player, controller, bodyZ, direction);
+            const bool  crash = hit && Solid(hit->layer) && hit->slopeDegrees >= physics.crashMinSurfaceDegrees &&
+                               sideways >= kSidewaysLoss;
+            const float metres = Core::EquivalentFallMetres(sideways, physics.gravity);
+            const float damage = crash && physics.impactDamage ? ImpactDamage(metres, physics.crashDamageScale) : 0.0F;
+            Hurt(player, damage);
+            if (crash) {
+                Tumble(player, impact->before, sideways, physics.crashTumbleSpeed, damage > 0.0F, physics);
+            }
             const float before = Core::Length(impact->before);
-            const Core::Vec3 into{ impact->lost.x / lost, impact->lost.y / lost, impact->lost.z / lost };
-            spdlog::info("impact: lost {:.1f}m/s ({:+.1f} vertical, {:.1f} horizontal) over {} frame{} of {:.1f}m/s "
-                         "({:.0f}mph) | hit {} | like a {:.1f}m fall ({:.1f}m after powder) -> game curve {:.0f} "
-                         "({:.0f} after powder) | health {:.0f} -> {:.0f}",
-                lost, impact->lost.z, Core::HorizontalLength(impact->lost), impact->frames,
-                impact->frames == 1 ? "" : "s", before, before * 2.23694F,
-                HitAlong(player, controller, bodyZ, into), metres, cushioned,
-                GameFallDamage(metres * kUnitsPerMetre), GameFallDamage(cushioned * kUnitsPerMetre),
-                g_impactHealth.value_or(health), health);
+            spdlog::info("impact: lost {:.1f}m/s ({:+.1f} vertical, {:.1f} sideways) over {} frame{} of {:.1f}m/s "
+                         "({:.0f}mph) | hit {} | {} | health {:.0f} -> {:.0f}",
+                lost, impact->lost.z, sideways, impact->frames, impact->frames == 1 ? "" : "s", before,
+                before * 2.23694F, HitName(hit),
+                crash ? fmt::format("crash like a {:.1f}m fall -> damage {:.0f}", metres, damage) : std::string("no crash"),
+                g_impactHealth.value_or(health), values->GetActorValue(RE::ActorValue::kHealth));
             g_impactHealth.reset();
         }
 
@@ -463,6 +767,7 @@ namespace SkiingInSkyrim::Skiing
     {
         auto* controller = player->GetCharController();
         auto* skis = Skis::Worn(player);
+        GuardTumble(player, controller, delta);
         if (const char* reason = InactiveReason(player, controller, skis)) {
             if (g_debug.active) {
                 spdlog::info("skiing inactive: {}", reason);
@@ -477,7 +782,16 @@ namespace SkiingInSkyrim::Skiing
             body.active = false;
             body.airDropMetres = 0.0F;
             SetBody(body);
-            Skis::Sync(player, nullptr);
+            Skis::Sync(player, reason == kConversation || reason == kDowned ? skis : nullptr);
+            if (reason == kWater && skis) {
+                SKSE::GetTaskInterface()->AddTask([] {
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (auto* skis = player ? Skis::Worn(player) : nullptr) {
+                        RE::ActorEquipManager::GetSingleton()->UnequipObject(player, skis);
+                        spdlog::info("skis off: water");
+                    }
+                });
+            }
             return;
         }
 
@@ -499,6 +813,7 @@ namespace SkiingInSkyrim::Skiing
             g_impactHealth.reset();
             g_lastHealth.reset();
             g_lastPosition = position;
+            g_tumbling = false;
             static bool settingsLogged = false;
             if (!std::exchange(settingsLogged, true)) {
                 LogFallSettings();
@@ -519,6 +834,22 @@ namespace SkiingInSkyrim::Skiing
             spdlog::info("skiing active");
             g_debug.ski = {};
             g_debug.ski.velocity = observed;  // keep the momentum we arrived with
+            g_airVelocity.Reset();
+        } else if (!grounded) {
+            g_airVelocity.Add(velocity);
+        } else if (g_airVelocity.count > 0) {
+            const auto  support = ToVec3(controller->supportNorm);
+            const auto  normal = support.z > 0.1F ? support : ground.normal;
+            const auto  landing = Settings::Physics();
+            const auto  touchdown = g_airVelocity.Hardest(normal);
+            const auto  landed = Core::LandingVelocity(touchdown, normal);
+            const auto& flying = g_debug.ski.velocity;
+            if (Core::Length(landed) > Core::Length(flying)) {
+                const float kept = std::clamp(landing.landingSpeedKept, 0.0F, 1.0F);
+                g_debug.ski.velocity = { flying.x + (landed.x - flying.x) * kept, flying.y + (landed.y - flying.y) * kept };
+            }
+            LandingDamage(player, touchdown, g_airVelocity.takeoff, normal, landing);
+            g_airVelocity.Reset();
         }
 
         Core::SkiInput input;
@@ -578,10 +909,13 @@ namespace SkiingInSkyrim::Skiing
         SetCommand({ true, step.velocity });
         const auto hugged = HugGround(controller, velocity, ground, physics, delta);
         g_debug.hugging = hugged.has_value();
+        if (hugged) {
+            g_airVelocity.ReplaceLatest(*hugged);
+        }
         const bool airborne =
             controller->surfaceInfo.supportedState.get() != RE::hkpSurfaceInfo::SupportedState::kSupported;
         TrackImpacts(player, controller, position, velocity, airborne, hugged, BodyHeight(controller), physics, delta);
-        SoftenFall(controller, position, velocity, ground, physics);
+        CancelFall(controller, position);
         g_debug.heightCorrection = SyncHeight(player, controller, ground, physics, delta);
         SetOverlay({
             .active = true,
@@ -604,6 +938,12 @@ namespace SkiingInSkyrim::Skiing
         g_debug.ground = ground;
         g_debug.step = step;
         g_debug.observedSpeed = Core::Length(observed);
+    }
+
+    void Reset()
+    {
+        g_tumbleGuard = false;
+        g_tumbling = false;
     }
 
     void ApplyMovement(RE::PlayerCharacter* player, RE::NiPoint3& movement, RE::NiPoint3& rotation)

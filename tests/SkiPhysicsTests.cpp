@@ -793,22 +793,33 @@ TEST_CASE("a tuck holds through a steered turn and eases out when let go")
     CHECK_NEAR(skier.last.tuck, 0.0F, 1e-6F);
 }
 
-TEST_CASE("landing along a slope is soft whatever the drop; meeting it head on is a fall")
+TEST_CASE("landing keeps the speed along the slope and loses the speed into it")
 {
-    const Vec3 slope = SlopeDownY(30.0F);
-    // Moving exactly along the slope: nothing into it.
+    // Moving exactly along a 30 degree slope: all of it carries on.
     const Vec3 along{ 0.0F, 10.0F * std::cos(30.0F * kDegrees), -10.0F * std::sin(30.0F * kDegrees) };
-    CHECK_NEAR(ImpactHeight(along, slope, 9.81F), 0.0F, 1e-4F);
-    // Straight down onto flat ground: the height that gives that speed.
-    CHECK_NEAR(ImpactHeight({ 0.0F, 0.0F, -14.0F }, kFlat, 9.81F), 14.0F * 14.0F / (2.0F * 9.81F), 1e-3F);
-    // Moving away from the slope: nothing.
-    CHECK_NEAR(ImpactHeight({ 0.0F, 0.0F, 5.0F }, kFlat, 9.81F), 0.0F, 1e-6F);
-    // Dropping onto a 30 degree slope counts the part of the speed into it.
-    const float into = 14.0F * std::cos(30.0F * kDegrees);
-    CHECK_NEAR(ImpactHeight({ 0.0F, 0.0F, -14.0F }, slope, 9.81F), into * into / (2.0F * 9.81F), 1e-3F);
+    const Vec2 kept = LandingVelocity(along, SlopeDownY(30.0F));
+    CHECK_NEAR(kept.x, 0.0F, 1e-4F);
+    CHECK_NEAR(kept.y, 10.0F, 1e-3F);
+    // Dropping onto flat ground: only the horizontal speed is left.
+    const Vec2 flat = LandingVelocity({ 3.0F, 4.0F, -14.0F }, kFlat);
+    CHECK_NEAR(flat.x, 3.0F, 1e-4F);
+    CHECK_NEAR(flat.y, 4.0F, 1e-4F);
+    // Dropping onto a steep face going downhill: the fall turns into speed down it, more than the
+    // horizontal speed alone.
+    const Vec3 drop{ 0.0F, 12.9F, -21.6F };
+    const Vec3 face = SlopeDownY(48.0F);
+    const float into = drop.y * face.y + drop.z * face.z;
+    const float expected = std::sqrt(Dot(drop, drop) - into * into);
+    const Vec2 steep = LandingVelocity(drop, face);
+    CHECK_NEAR(steep.x, 0.0F, 1e-4F);
+    CHECK_NEAR(steep.y, expected, 1e-3F);
+    CHECK(steep.y > 20.0F);
+    // Moving away from the slope loses nothing.
+    const Vec2 rising = LandingVelocity({ 0.0F, 5.0F, 2.0F }, kFlat);
+    CHECK_NEAR(rising.y, std::sqrt(29.0F), 1e-4F);
 }
 
-TEST_CASE("powder is slower, bites harder sideways and cushions landings")
+TEST_CASE("powder is slower and bites harder sideways")
 {
     Skier packed;
     Skier powder;
@@ -827,11 +838,6 @@ TEST_CASE("powder is slower, bites harder sideways and cushions landings")
     powderSmear.Run(0.5F, kFlat);
     CHECK(powderSmear.Speed() < packedSmear.Speed() - 0.4F);
 
-    const Vec3 drop{ 0.0F, 0.0F, -14.0F };
-    CHECK_NEAR(LandingHeight(drop, kFlat, powder.settings),
-        ImpactHeight(drop, kFlat, 9.81F) - powder.settings.powderLandingMetres, 1e-3F);
-    CHECK_NEAR(LandingHeight(drop, kFlat, packed.settings), ImpactHeight(drop, kFlat, 9.81F), 1e-3F);
-    CHECK(LandingHeight({ 0.0F, 0.0F, -5.0F }, kFlat, powder.settings) == 0.0F);
 }
 
 TEST_CASE("powder bites at speed on steep runs but leaves gentle cruising mostly alone")

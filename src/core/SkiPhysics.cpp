@@ -241,21 +241,22 @@ namespace SkiingInSkyrim::Core
         return std::max(floor, vertical - settings.groundHugGravity * std::max(0.0F, deltaSeconds));
     }
 
-    float ImpactHeight(Vec3 velocity, Vec3 slopeNormal, float gravity) noexcept
+    Vec2 LandingVelocity(Vec3 velocity, Vec3 slopeNormal) noexcept
     {
-        const float length = std::sqrt(slopeNormal.x * slopeNormal.x + slopeNormal.y * slopeNormal.y +
-                                       slopeNormal.z * slopeNormal.z);
-        if (length < 1e-4F || gravity <= 0.0F) {
-            return 0.0F;
+        const float length = Length(slopeNormal);
+        const float horizontal = HorizontalLength(velocity);
+        if (length < 1e-4F || horizontal < 1e-4F) {
+            return { velocity.x, velocity.y };
         }
-        const float into = -(velocity.x * slopeNormal.x + velocity.y * slopeNormal.y + velocity.z * slopeNormal.z) / length;
-        return into > 0.0F ? into * into / (2.0F * gravity) : 0.0F;
-    }
-
-    float LandingHeight(Vec3 velocity, Vec3 slopeNormal, const SkiSettings& settings) noexcept
-    {
-        const float height = ImpactHeight(velocity, slopeNormal, settings.gravity);
-        return settings.powder ? std::max(0.0F, height - std::max(0.0F, settings.powderLandingMetres)) : height;
+        const Vec3  n{ slopeNormal.x / length, slopeNormal.y / length, slopeNormal.z / length };
+        const float into = std::min(0.0F, Dot(velocity, n));
+        const Vec3  along{ velocity.x - into * n.x, velocity.y - into * n.y, velocity.z - into * n.z };
+        const float alongHorizontal = HorizontalLength(along);
+        if (alongHorizontal < 1e-4F) {
+            return {};
+        }
+        const float speed = Length(along);
+        return { along.x / alongHorizontal * speed, along.y / alongHorizontal * speed };
     }
 
     float AimStrength(float stickX, float stickY, float deadzone) noexcept

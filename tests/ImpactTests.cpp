@@ -111,3 +111,39 @@ TEST_CASE("equivalent fall height matches free fall")
     CHECK_NEAR(EquivalentFallMetres(14.0F, 9.81F), 14.0F * 14.0F / (2.0F * 9.81F), 1e-4F);
     CHECK(EquivalentFallMetres(5.0F, 0.0F) == 0.0F);
 }
+
+TEST_CASE("a landing counts what the air added")
+{
+    const float g = 9.81F;
+    // Off a 20 m cliff onto flat ground, already going down at 12.7 m/s: the 20 m.
+    const float onto = std::sqrt(12.7F * 12.7F + 2.0F * g * 20.0F);
+    CHECK_NEAR(LandingFallMetres(onto, 12.7F, g), 20.0F, 1e-2F);
+    // A brief hop into a ramp face already being skied into: almost nothing.
+    CHECK(LandingFallMetres(18.6F, 17.9F, g) < 1.5F);
+    // Taking off level or away from the landing surface: the whole speed into it.
+    CHECK_NEAR(LandingFallMetres(14.0F, 0.0F, g), EquivalentFallMetres(14.0F, g), 1e-4F);
+    CHECK(LandingFallMetres(5.0F, 8.0F, g) == 0.0F);
+}
+
+TEST_CASE("only the speed into a surface counts")
+{
+    CHECK_NEAR(SpeedInto({ 3.0F, 4.0F, -14.0F }, { 0.0F, 0.0F, 1.0F }), 14.0F, 1e-4F);
+    CHECK(SpeedInto({ 0.0F, 0.0F, 5.0F }, { 0.0F, 0.0F, 1.0F }) == 0.0F);
+    // Into a tree (normal facing back at the skier), whatever the vertical speed.
+    CHECK_NEAR(SpeedInto({ 0.0F, 12.0F, -3.0F }, { 0.0F, -1.0F, 0.0F }), 12.0F, 1e-4F);
+    // An unnormalised normal gives the same.
+    CHECK_NEAR(SpeedInto({ 0.0F, 0.0F, -14.0F }, { 0.0F, 0.0F, 2.0F }), 14.0F, 1e-4F);
+    // Falling at 40 degrees below horizontal onto a 48 degree slope going the same way: little.
+    const float slope = 48.0F * 3.14159265F / 180.0F;
+    const Vec3  normal{ 0.0F, std::sin(slope), std::cos(slope) };
+    CHECK(SpeedInto({ 0.0F, 12.9F, -21.6F }, normal) < 5.0F);
+}
+
+TEST_CASE("fall damage follows the game's curve")
+{
+    const FallCurve curve{ 600.0F, 0.1F, 1.45F };
+    CHECK(FallDamage(600.0F, curve) == 0.0F);
+    CHECK(FallDamage(100.0F, curve) == 0.0F);
+    CHECK_NEAR(FallDamage(896.0F, curve), std::pow(29.6F, 1.45F), 1e-2F);
+    CHECK(FallDamage(1200.0F, curve) > FallDamage(900.0F, curve));
+}

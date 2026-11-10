@@ -108,17 +108,105 @@ namespace SkiingInSkyrim::Menu
             RenderBinding(Binding::SkidGamepad, "Skid (gamepad)", "press a gamepad button (Esc cancels)");
         }
 
-        void __stdcall RenderSettings()
+        void Tooltip(const char* help)
+        {
+            if (ImGuiMCP::IsItemHovered()) {
+                ImGuiMCP::SetTooltip("%s", help);
+            }
+        }
+
+        // A checkbox for an on/off setting kept outside the field tables, saved as soon as it's clicked.
+        void Toggle(const char* label, bool (*get)(), void (*set)(bool), const char* help)
+        {
+            bool value = get();
+            if (ImGuiMCP::Checkbox(label, &value)) {
+                set(value);
+                Settings::Save();
+            }
+            Tooltip(help);
+        }
+
+        // Sliders save when released, so dragging one doesn't write the file every frame.
+        template <class Owner, class Field>
+        void Sliders(Owner& values, std::span<const Field> fields, bool& changed, bool& finished)
+        {
+            for (const auto& field : fields) {
+                changed |= ImGuiMCP::SliderFloat(field.label, &(values.*field.member), field.min, field.max, field.format);
+                finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
+                Tooltip(field.help);
+            }
+        }
+
+        template <class Owner, class Field>
+        void Checkboxes(Owner& values, std::span<const Field> fields, bool& changed, bool& finished)
+        {
+            for (const auto& field : fields) {
+                if (ImGuiMCP::Checkbox(field.label, &(values.*field.member))) {
+                    changed = finished = true;
+                }
+                Tooltip(field.help);
+            }
+        }
+
+        void Hint()
+        {
+            ImGuiMCP::TextDisabled("%s", "Saved to Data/SKSE/Plugins/SkiingInSkyrim.ini when you release a slider. "
+                                         "Ctrl+click a slider to type a value.");
+        }
+
+        bool ResetButton() { return ImGuiMCP::Button("Reset this page to defaults"); }
+
+        // The physics settings on one page, under their group headings, with a reset for just those.
+        void PhysicsPage(Settings::Page page)
+        {
+            auto physics = Settings::Physics();
+            bool changed = false;
+            bool finished = false;
+            for (const auto& group : Settings::PhysicsGroups()) {
+                if (group.page != page) {
+                    continue;
+                }
+                if (*group.title) {
+                    ImGuiMCP::SeparatorText(group.title);
+                }
+                if (group.intro) {
+                    ImGuiMCP::TextWrapped("%s", group.intro);
+                }
+                Checkboxes(physics, group.switches, changed, finished);
+                Sliders(physics, group.fields, changed, finished);
+            }
+            ImGuiMCP::Spacing();
+            if (ResetButton()) {
+                const Core::SkiSettings defaults;
+                for (const auto& group : Settings::PhysicsGroups()) {
+                    if (group.page != page) {
+                        continue;
+                    }
+                    for (const auto& field : group.switches) {
+                        physics.*field.member = defaults.*field.member;
+                    }
+                    for (const auto& field : group.fields) {
+                        physics.*field.member = defaults.*field.member;
+                    }
+                }
+                changed = finished = true;
+            }
+            if (changed) {
+                Settings::SetPhysics(physics);
+            }
+            if (finished) {
+                Settings::Save();
+            }
+        }
+
+        void __stdcall RenderGeneral()
         {
             bool enabled = Settings::ModEnabled();
             if (ImGuiMCP::Checkbox("Mod enabled", &enabled)) {
                 Settings::SetModEnabled(enabled);
                 Settings::Save();
             }
-            if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "Off, wearing skis does nothing: handy for telling whether a problem "
-                                           "comes from this mod.");
-            }
+            Tooltip("Off, wearing skis does nothing: handy for telling whether a problem comes from this mod.");
             ImGuiMCP::SameLine();
             if (!enabled) {
                 ImGuiMCP::TextDisabled("%s", "(skis do nothing)");
@@ -127,77 +215,35 @@ namespace SkiingInSkyrim::Menu
             } else {
                 ImGuiMCP::TextDisabled("%s", "Put on skis to ski (craft them at a forge)");
             }
-            RenderBindings();
-            bool lookKeyboard = Settings::LookSteersKeyboardMouse();
-            if (ImGuiMCP::Checkbox("Looking around steers (keyboard/mouse)", &lookKeyboard)) {
-                Settings::SetLookSteersKeyboardMouse(lookKeyboard);
-                Settings::Save();
-            }
-            if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "W/A/S/D steer relative to where you look, so moving the mouse while "
-                                           "holding a key turns the skis. Off, they steer relative to the chase "
-                                           "camera and the mouse only looks around.");
-            }
-            bool lookGamepad = Settings::LookSteersGamepad();
-            if (ImGuiMCP::Checkbox("Looking around steers (gamepad)", &lookGamepad)) {
-                Settings::SetLookSteersGamepad(lookGamepad);
-                Settings::Save();
-            }
-            if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "The left stick steers relative to where you look, so the right stick "
-                                           "turns the skis while the left is pushed. Off, it steers relative to the "
-                                           "chase camera and the right stick only looks around.");
-            }
-            auto physics = Settings::Physics();
-            for (const auto& field : Settings::StaminaFields()) {
-                if (ImGuiMCP::SliderFloat(field.label, &(physics.*field.member), field.min, field.max, field.format)) {
-                    Settings::SetPhysics(physics);
-                }
-                if (ImGuiMCP::IsItemDeactivatedAfterEdit()) {
-                    Settings::Save();
-                }
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", field.help);
-                }
-            }
-            bool overlay = Settings::ShowOverlay();
-            if (ImGuiMCP::Checkbox("Show debug overlay", &overlay)) {
-                Settings::SetShowOverlay(overlay);
-                Settings::Save();
-            }
-            bool trace = Settings::TraceShaking();
-            if (ImGuiMCP::Checkbox("Log jitter trace", &trace)) {
-                Settings::SetTraceShaking(trace);
-                Settings::Save();
-            }
-            if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "Writes every frame to the log while the character shakes up and down. "
-                                           "Only for chasing jitter; leave off otherwise.");
-            }
-            bool stance = Settings::StanceEnabled();
-            if (ImGuiMCP::Checkbox("Ski stance", &stance)) {
-                Settings::SetStanceEnabled(stance);
-                Settings::Save();
-            }
-            if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "Pose the body like a skier while skiing: knees bent, leaning forward, "
-                                           "arms out front, crouching into a tuck. Shape it under Tuning > Body. "
-                                           "Off, the game's own animation shows.");
-            }
-            auto camera = Settings::Camera();
-            if (ImGuiMCP::Checkbox("Camera follows direction of travel", &camera.enabled)) {
-                Settings::SetCamera(camera);
-                Settings::Save();
-            }
-            if (ImGuiMCP::IsItemHovered()) {
-                ImGuiMCP::SetTooltip("%s", "Third person only. The camera swings round behind where you're going; the "
-                                           "right stick or mouse looks around and it eases back.");
-            }
+            Toggle("Show debug overlay", Settings::ShowOverlay, Settings::SetShowOverlay,
+                "Speed, slope, edge and the skis' direction on screen while skiing.");
+            Toggle("Log jitter trace", Settings::TraceShaking, Settings::SetTraceShaking,
+                "Writes every frame to the log while the character shakes up and down. Only for chasing jitter; "
+                "leave off otherwise.");
             ImGuiMCP::TextWrapped("%s", "Wear skis (Wooden Skis: firewood and leather strips at a forge) to ski; "
-                                        "take them off to walk. "
-                                        "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
-                                        "an arc that tightens with more edge. Attacks, blocking and readying weapons "
-                                        "are off while skiing.");
+                                        "take them off to walk. Attacks, blocking and readying weapons are off while "
+                                        "skiing. Landing along a slope is soft; landing flat or skiing into trees, "
+                                        "rocks and walls hurts (see Impacts). Telemetry is written to the log while "
+                                        "enabled.");
+
+            ImGuiMCP::SeparatorText("Compatibility");
+            RenderTdm();
+            RenderMovementChain();
+            RenderCamera();
+        }
+
+        void __stdcall RenderControls()
+        {
+            RenderBindings();
+            Toggle("Looking around steers (keyboard/mouse)", Settings::LookSteersKeyboardMouse,
+                Settings::SetLookSteersKeyboardMouse,
+                "W/A/S/D steer relative to where you look, so moving the mouse while holding a key turns the skis. "
+                "Off, they steer relative to the chase camera and the mouse only looks around.");
+            Toggle("Looking around steers (gamepad)", Settings::LookSteersGamepad, Settings::SetLookSteersGamepad,
+                "The left stick steers relative to where you look, so the right stick turns the skis while the left "
+                "is pushed. Off, it steers relative to the chase camera and the right stick only looks around.");
+            ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
+                                        "an arc that tightens with more edge.");
             ImGuiMCP::TextWrapped("%s", "Steer with the left stick or W/A/S/D: the skis "
                                         "turn toward where you push, relative to the camera, more firmly the further "
                                         "you push. Push firmly the way the skis already point to tuck and go faster. "
@@ -212,95 +258,79 @@ namespace SkiingInSkyrim::Menu
                                         "further the longer you hold. Keep holding and you stay put on the hill. "
                                         "Release before you've stopped and they untwist; stop completely and they "
                                         "stay where they are. Sliding slowly sideways, the uphill edge feathers the "
-                                        "slip: none slides, full holds. Landing along a slope is soft; what hurts is "
-                                        "how hard you meet it. Telemetry is written to the log while enabled.");
-
-            ImGuiMCP::SeparatorText("Compatibility");
-            RenderTdm();
-            RenderMovementChain();
-            RenderCamera();
+                                        "slip: none slides, full holds.");
+            PhysicsPage(Settings::Page::Controls);
         }
 
-        void __stdcall RenderTuning()
+        void __stdcall RenderSpeed()
         {
-            ImGuiMCP::TextWrapped("%s", "Changes apply immediately and are saved to Data/SKSE/Plugins/SkiingInSkyrim.ini "
-                                        "when you release a slider. Ctrl+click a slider to type a value.");
-            auto physics = Settings::Physics();
+            Hint();
+            PhysicsPage(Settings::Page::Speed);
+        }
+
+        void __stdcall RenderBody()
+        {
+            Toggle("Ski stance", Settings::StanceEnabled, Settings::SetStanceEnabled,
+                "Pose the body like a skier while skiing: knees bent, leaning forward, arms out front, crouching "
+                "into a tuck. Off, the game's own animation shows.");
+            Hint();
+            auto stance = Settings::Stance();
             bool changed = false;
             bool finished = false;
-            for (const auto& field : Settings::PhysicsSwitches()) {
-                if (ImGuiMCP::Checkbox(field.label, &(physics.*field.member))) {
-                    changed = true;
-                    finished = true;
-                }
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", field.help);
-                }
-            }
-            for (const auto& field : Settings::PhysicsFields()) {
-                changed |= ImGuiMCP::SliderFloat(field.label, &(physics.*field.member), field.min, field.max, field.format);
-                finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", field.help);
-                }
+            Checkboxes(stance, Settings::StanceSwitches(), changed, finished);
+            Sliders(stance, Settings::StanceFields(), changed, finished);
+            ImGuiMCP::Spacing();
+            if (ResetButton()) {
+                stance = {};
+                changed = finished = true;
             }
             if (changed) {
-                Settings::SetPhysics(physics);
-            }
-
-            ImGuiMCP::SeparatorText("Camera");
-            auto camera = Settings::Camera();
-            bool cameraChanged = false;
-            for (const auto& field : Settings::CameraFields()) {
-                cameraChanged |= ImGuiMCP::SliderFloat(field.label, &(camera.*field.member), field.min, field.max,
-                    field.format);
-                finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", field.help);
-                }
-            }
-            if (cameraChanged) {
-                Settings::SetCamera(camera);
-            }
-
-            ImGuiMCP::SeparatorText("Body");
-            auto stance = Settings::Stance();
-            bool stanceChanged = false;
-            for (const auto& field : Settings::StanceSwitches()) {
-                if (ImGuiMCP::Checkbox(field.label, &(stance.*field.member))) {
-                    stanceChanged = true;
-                    finished = true;
-                }
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", field.help);
-                }
-            }
-            for (const auto& field : Settings::StanceFields()) {
-                stanceChanged |= ImGuiMCP::SliderFloat(field.label, &(stance.*field.member), field.min, field.max,
-                    field.format);
-                finished |= ImGuiMCP::IsItemDeactivatedAfterEdit();
-                if (ImGuiMCP::IsItemHovered()) {
-                    ImGuiMCP::SetTooltip("%s", field.help);
-                }
-            }
-            if (stanceChanged) {
                 Settings::SetStance(stance);
-            }
-
-            ImGuiMCP::Spacing();
-            if (ImGuiMCP::Button("Reset to defaults")) {
-                Core::SkiSettings defaults;
-                for (const auto& field : Settings::StaminaFields()) {
-                    defaults.*field.member = physics.*field.member;
-                }
-                Settings::SetPhysics(defaults);
-                Settings::SetCamera({ .enabled = Settings::Camera().enabled });
-                Settings::SetStance({});
-                finished = true;
             }
             if (finished) {
                 Settings::Save();
             }
+        }
+
+        void __stdcall RenderCameraPage()
+        {
+            auto camera = Settings::Camera();
+            bool changed = false;
+            bool finished = false;
+            if (ImGuiMCP::Checkbox("Camera follows direction of travel", &camera.enabled)) {
+                changed = finished = true;
+            }
+            Tooltip("Third person only. The camera swings round behind where you're going; the right stick or "
+                    "mouse looks around and it eases back.");
+            Hint();
+            Sliders(camera, Settings::CameraFields(), changed, finished);
+            ImGuiMCP::Spacing();
+            if (ResetButton()) {
+                camera = { .enabled = camera.enabled };
+                changed = finished = true;
+            }
+            if (changed) {
+                Settings::SetCamera(camera);
+            }
+            if (finished) {
+                Settings::Save();
+            }
+        }
+
+        void __stdcall RenderStamina()
+        {
+            Hint();
+            PhysicsPage(Settings::Page::Stamina);
+        }
+
+        void __stdcall RenderImpacts()
+        {
+            ImGuiMCP::TextWrapped("%s", "On skis, the game's own fall damage is off. Instead, landings hurt by how "
+                                        "fast you meet the slope (landing along a steep slope going downhill is soft; "
+                                        "dropping flat is not), and skiing into trees, rocks and walls hurts by the "
+                                        "speed lost. Both use the game's fall-damage curve, scaled below.");
+            Hint();
+            PhysicsPage(Settings::Page::Impacts);
         }
 
         bool __stdcall OnFrameworkInput(RE::InputEvent* event) { return Input::OnMenuFrameworkInput(event); }
@@ -312,8 +342,13 @@ namespace SkiingInSkyrim::Menu
             return false;
         }
         SKSEMenuFramework::SetSection("Skiing in Skyrim");
-        SKSEMenuFramework::AddSectionItem("Settings", RenderSettings);
-        SKSEMenuFramework::AddSectionItem("Tuning", RenderTuning);
+        SKSEMenuFramework::AddSectionItem("General", RenderGeneral);
+        SKSEMenuFramework::AddSectionItem("Controls", RenderControls);
+        SKSEMenuFramework::AddSectionItem("Speed", RenderSpeed);
+        SKSEMenuFramework::AddSectionItem("Body", RenderBody);
+        SKSEMenuFramework::AddSectionItem("Camera", RenderCameraPage);
+        SKSEMenuFramework::AddSectionItem("Stamina", RenderStamina);
+        SKSEMenuFramework::AddSectionItem("Impacts", RenderImpacts);
         SKSEMenuFramework::AddInputEvent(OnFrameworkInput);
         SKSEMenuFramework::AddHudElement(Overlay::Render);
         return true;

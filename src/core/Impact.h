@@ -58,4 +58,23 @@ namespace SkiingInSkyrim::Core
 
     // Metres of free fall that would land as hard as losing this much speed.
     [[nodiscard]] float EquivalentFallMetres(float speedLost, float gravity) noexcept;
+
+    // Metres of free fall that would land as hard as the air added to the speed into the landing surface: what
+    // was already going into it at takeoff (skiing down a steep slope towards a flatter one or a ramp) is free.
+    // Onto flat ground that is the height dropped in the air.
+    [[nodiscard]] float LandingFallMetres(float into, float takeoffInto, float gravity) noexcept;
+
+    // m/s of this velocity going into a surface with this normal; 0 moving along it or away.
+    [[nodiscard]] float SpeedInto(Vec3 velocity, Vec3 normal) noexcept;
+
+    // The game's fall damage: ((height - minimum) * mult) ^ exponent, nothing below the minimum. Heights in
+    // game units, as its fJumpFallHeight settings are.
+    struct FallCurve
+    {
+        float minimumUnits{ 600.0F };
+        float mult{ 0.1F };
+        float exponent{ 1.65F };
+    };
+
+    [[nodiscard]] float FallDamage(float heightUnits, const FallCurve& curve) noexcept;
 }

@@ -15,7 +15,23 @@ namespace SkiingInSkyrim::Settings
         constexpr std::uint32_t kGamepadX = 0x4000;
 
         using S = Core::SkiSettings;
-        constexpr FloatField kPhysicsFields[] = {
+        constexpr FloatField kSteeringFields[] = {
+            { "SteerDegreesPerSecond", "Steering rate", "Degrees per second the skis turn toward where the stick (or "
+                                                        "W/A/S/D) aims, at a full push.",
+                &S::steerDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
+            { "AimDeadzone", "Stick deadzone", "Fraction of the stick's travel, from the centre, that does nothing.",
+                &S::aimDeadzone, 0.0F, 0.6F, "%.2f" },
+            { "TriggerEdgeRamp", "Trigger edge ramp", "Full edge range per second when edging with the triggers; "
+                                                      "smooths the trigger.",
+                &S::triggerEdgeRamp, 1.0F, 30.0F, "%.1f" },
+            { "MouseEdgeRamp", "Mouse edge ramp", "Full edge range per second while a mouse button is held.",
+                &S::buttonEdgeRamp, 0.2F, 10.0F, "%.2f" },
+            { "MouseEdgeRelease", "Mouse edge release", "Full edge range per second after a mouse button is released; "
+                                                        "slow keeps the edge from a tap.",
+                &S::buttonEdgeRelease, 0.1F, 10.0F, "%.2f" },
+        };
+
+        constexpr FloatField kSpeedFields[] = {
             { "Gravity", "Gravity", "m/s^2. Scales how hard slopes pull you.", &S::gravity, 2.0F, 20.0F, "%.2f" },
             { "SnowFriction", "Snow friction", "Friction coefficient. Slopes gentler than atan(this) won't start a slide.",
                 &S::snowFriction, 0.0F, 0.3F, "%.3f" },
@@ -26,6 +42,20 @@ namespace SkiingInSkyrim::Settings
                                                      "steep at high ones. Lower means faster on steep runs.",
                 &S::dragPerSpeedFourth, 0.0F, 0.0003F, "%.6f" },
             { "MaxSpeed", "Max speed", "m/s. Hard cap.", &S::maxSpeed, 5.0F, 60.0F, "%.1f" },
+            { "TuckDragReduction", "Tuck", "Fraction of air drag cut by tucking (pushing firmly the way the skis "
+                                           "point). Higher means faster in a tuck; 0 is off.",
+                &S::tuckDragReduction, 0.0F, 0.8F, "%.2f" },
+            { "CarvePump", "Carve pump", "A clean carve pushes you forward by this times the turn's sideways "
+                                         "acceleration, so holding a carve through a turn keeps or builds speed. 0 is "
+                                         "off.",
+                &S::carvePump, 0.0F, 0.3F, "%.2f" },
+            { "LandingSpeedKept", "Landing speed kept", "Landing on a slope going downhill turns the fall into speed "
+                                                        "down it: this fraction of the speed it would add. 1 is all of "
+                                                        "it, 0 lands at the speed you flew at.",
+                &S::landingSpeedKept, 0.0F, 1.0F, "%.2f" },
+        };
+
+        constexpr FloatField kEdgesFields[] = {
             { "SidecutRadius", "Sidecut radius", "Metres. A carving ski follows an arc of sidecut * cos(edge angle); "
                                                  "smaller carves tighter.",
                 &S::sidecutRadius, 5.0F, 40.0F, "%.1f" },
@@ -39,14 +69,13 @@ namespace SkiingInSkyrim::Settings
             { "EdgeGripFactor", "Edge grip", "Sideways grip added by edging, times tan(edge angle). Limits how tight you can "
                                              "carve at speed and how hard a hockey stop brakes.",
                 &S::edgeGrip, 0.1F, 2.0F, "%.2f" },
-            { "TriggerEdgeRamp", "Trigger edge ramp", "Full edge range per second when edging with the triggers; "
-                                                      "smooths the trigger.",
-                &S::triggerEdgeRamp, 1.0F, 30.0F, "%.1f" },
-            { "MouseEdgeRamp", "Mouse edge ramp", "Full edge range per second while a mouse button is held.",
-                &S::buttonEdgeRamp, 0.2F, 10.0F, "%.2f" },
-            { "MouseEdgeRelease", "Mouse edge release", "Full edge range per second after a mouse button is released; "
-                                                        "slow keeps the edge from a tap.",
-                &S::buttonEdgeRelease, 0.1F, 10.0F, "%.2f" },
+            { "SelfAlignDegreesPerSecond", "Self-align rate", "Degrees per second flat skis smearing sideways at speed "
+                                                              "swing round to where you're going, with the stick centred "
+                                                              "and nothing held. Slow side-slips are left alone; 0 is off.",
+                &S::selfAlignDegreesPerSecond, 0.0F, 180.0F, "%.0f" },
+        };
+
+        constexpr FloatField kSkidFields[] = {
             { "PivotMaxDegrees", "Skid twist", "Degrees the skis twist (pivot) when the skid button is held fully.",
                 &S::pivotMaxDegrees, 20.0F, 120.0F, "%.0f" },
             { "PivotBuildSeconds", "Skid twist time", "Seconds of holding skid to reach the full twist; a shorter hold "
@@ -57,18 +86,9 @@ namespace SkiingInSkyrim::Settings
             { "ParkSpeed", "Stop speed", "m/s. Slowing below this while holding skid counts as stopped: you're held "
                                          "there, and the skis stay where they are when you let go.",
                 &S::parkSpeed, 0.0F, 2.0F, "%.2f" },
-            { "SteerDegreesPerSecond", "Steering rate", "Degrees per second the skis turn toward where the stick (or "
-                                                        "W/A/S/D) aims, at a full push.",
-                &S::steerDegreesPerSecond, 10.0F, 360.0F, "%.0f" },
-            { "AimDeadzone", "Stick deadzone", "Fraction of the stick's travel, from the centre, that does nothing.",
-                &S::aimDeadzone, 0.0F, 0.6F, "%.2f" },
-            { "TuckDragReduction", "Tuck", "Fraction of air drag cut by tucking (pushing firmly the way the skis "
-                                           "point). Higher means faster in a tuck; 0 is off.",
-                &S::tuckDragReduction, 0.0F, 0.8F, "%.2f" },
-            { "CarvePump", "Carve pump", "A clean carve pushes you forward by this times the turn's sideways "
-                                         "acceleration, so holding a carve through a turn keeps or builds speed. 0 is "
-                                         "off.",
-                &S::carvePump, 0.0F, 0.3F, "%.2f" },
+        };
+
+        constexpr FloatField kSkatingFields[] = {
             { "SkateImpulse", "Skate stride", "m/s each skating stride adds from a standstill (on gentle ground, stick "
                                               "pushed forward, squeeze the triggers alternately). 0 is off.",
                 &S::skateImpulse, 0.0F, 3.0F, "%.2f" },
@@ -79,10 +99,9 @@ namespace SkiingInSkyrim::Settings
                 &S::skateMaxSpeed, 1.0F, 12.0F, "%.1f" },
             { "SkateMaxSlopeDegrees", "Skate max slope", "Degrees. Steeper than this, the triggers only edge.",
                 &S::skateMaxSlopeDegrees, 0.0F, 25.0F, "%.0f" },
-            { "SelfAlignDegreesPerSecond", "Self-align rate", "Degrees per second flat skis smearing sideways at speed "
-                                                              "swing round to where you're going, with the stick centred "
-                                                              "and nothing held. Slow side-slips are left alone; 0 is off.",
-                &S::selfAlignDegreesPerSecond, 0.0F, 180.0F, "%.0f" },
+        };
+
+        constexpr FloatField kPowderFields[] = {
             { "PowderDragPerSpeedFourth", "Powder drag", "Deceleration per (m/s)^4 from ploughing through deep snow, "
                                                          "when powder is on, on top of drag. It grows steeply with "
                                                          "speed, so it bites on fast steep runs and barely touches "
@@ -91,9 +110,14 @@ namespace SkiingInSkyrim::Settings
             { "PowderSideGrip", "Powder side grip", "Flat grip is multiplied by this in powder: skids, stops and "
                                                     "steered turns bite harder.",
                 &S::powderSideGrip, 1.0F, 4.0F, "%.2f" },
-            { "PowderLandingMetres", "Powder landing", "Metres of fall the powder absorbs on landing: smaller drops "
-                                                       "are free, bigger ones count the rest.",
-                &S::powderLandingMetres, 0.0F, 10.0F, "%.1f" },
+        };
+        constexpr BoolField kPowderSwitches[] = {
+            { "Powder", "Powder", "Deep snow everywhere: slower, skids and stops bite harder, landings are softer "
+                                  "(see the Powder sliders).",
+                &S::powder },
+        };
+
+        constexpr FloatField kAdvancedFields[] = {
             { "GroundHugSeconds", "Ground hug time", "Seconds off the ground over a crest (not a jump) during which "
                                                      "you're held to the slope; longer absorbs bigger crests, 0 is off.",
                 &S::groundHugSeconds, 0.0F, 1.0F, "%.2f" },
@@ -102,12 +126,25 @@ namespace SkiingInSkyrim::Settings
             { "GroundHugMaxDropSpeed", "Ground hug max drop", "m/s. The pull can't take you down faster than this "
                                                               "beyond following the slope, so you don't slam back onto it.",
                 &S::groundHugMaxDropSpeed, 0.0F, 10.0F, "%.1f" },
-            { "BlockedRatio", "Blocked ratio", "If the engine delivers less than this fraction of our speed, give way.",
+        };
+        constexpr BoolField kAdvancedSwitches[] = {
+            { "SmoothHeight", "Smooth steep slopes", "Keep the character at the physics body's height every frame, "
+                                                     "so fast descents of steep slopes don't jitter up and down.",
+                &S::smoothHeight },
+        };
+
+        constexpr FloatField kBlockedFields[] = {
+            { "BlockedRatio", "Counts as blocked below", "If you're moving slower than this share of the speed the skis "
+                                                         "should have (0.75 is 75%), something is in your way: a wall, "
+                                                         "fence, person or rock.",
                 &S::blockedRatio, 0.3F, 0.95F, "%.2f" },
-            { "BlockedBlend", "Blocked blend", "Per-frame blend toward the delivered speed while blocked.", &S::blockedBlend,
-                0.05F, 1.0F, "%.2f" },
-            { "BlockedMinSpeed", "Blocked min speed", "m/s. Below this, blocking is not checked.", &S::blockedMinSpeed, 0.0F,
-                3.0F, "%.2f" },
+            { "BlockedBlend", "Give way rate", "While blocked, how quickly your skiing speed drops to what you're "
+                                               "actually managing, per frame. Higher stops you dead at an obstacle; "
+                                               "lower holds on to speed and may shoot you off when you slide clear.",
+                &S::blockedBlend, 0.05F, 1.0F, "%.2f" },
+            { "BlockedMinSpeed", "Ignore below speed", "m/s. Slower than this, the check is skipped: tiny speeds are "
+                                                       "too noisy to judge.",
+                &S::blockedMinSpeed, 0.0F, 3.0F, "%.2f" },
         };
 
         constexpr FloatField kStaminaFields[] = {
@@ -122,13 +159,69 @@ namespace SkiingInSkyrim::Settings
                 &S::tiredEdgeFraction, 0.0F, 1.0F, "%.2f" },
         };
 
-        constexpr BoolField kPhysicsSwitches[] = {
-            { "Powder", "Powder", "Deep snow everywhere: slower, skids and stops bite harder, landings are softer "
-                                  "(see the Powder sliders).",
-                &S::powder },
-            { "SmoothHeight", "Smooth steep slopes", "Keep the character at the physics body's height every frame, "
-                                                     "so fast descents of steep slopes don't jitter up and down.",
-                &S::smoothHeight },
+        constexpr FloatField kImpactsFields[] = {
+            { "LandingDamageScale", "Landing damage", "Damage from landings, times the game's own for a fall as hard "
+                                                      "as the speed the air added into the slope (onto flat "
+                                                      "ground, the height dropped). 0 is off.",
+                &S::landingDamageScale, 0.0F, 3.0F, "%.2f" },
+            { "CrashDamageScale", "Crash damage", "Damage from skiing into trees, rocks and walls, times the game's "
+                                                  "own for a fall as hard as the speed lost. 0 is off.",
+                &S::crashDamageScale, 0.0F, 3.0F, "%.2f" },
+            { "CrashMinSurfaceDegrees", "Crash surface", "Degrees. Only surfaces at least this steep count as a crash; "
+                                                         "anything gentler is a landing.",
+                &S::crashMinSurfaceDegrees, 30.0F, 90.0F, "%.0f" },
+            { "LandingTumbleSpeed", "Landing tumble speed", "m/s. Landing at least this fast into the slope (after "
+                                                            "the powder's share) makes you tumble. 9.5 m/s is about a 15 ft "
+                                                            "drop onto flat ground (25 ft in powder).",
+                &S::landingTumbleSpeed, 5.0F, 40.0F, "%.1f" },
+            { "CrashTumbleSpeed", "Crash tumble speed", "m/s. Losing at least this much speed into a tree, rock or "
+                                                        "wall knocks you down. 6.7 m/s is 15 mph; crashes start to "
+                                                        "hurt at about 13 m/s (29 mph).",
+                &S::crashTumbleSpeed, 3.0F, 40.0F, "%.1f" },
+            { "RagdollThrow", "Tumble throw", "How hard the tumble throws you on the way you were going, per m/s of "
+                                              "speed. 0 just knocks you down.",
+                &S::ragdollThrow, 0.0F, 1.0F, "%.2f" },
+            { "RagdollSpeedKept", "Tumble speed kept", "How much of your speed the body keeps going into the tumble. "
+                                                       "1 slides on as fast as you were skiing; 0 drops on the spot.",
+                &S::ragdollSpeedKept, 0.0F, 1.0F, "%.2f" },
+            { "TumbleSlideSeconds", "Tumble slide", "Seconds the body tumbles freely before it's braked to a stop. "
+                                                    "10 lets it roll on down the hill.",
+                &S::tumbleSlideSeconds, 0.0F, 10.0F, "%.1f" },
+            { "PowderLandingMetres", "Powder landing", "Metres of fall the powder absorbs on landing: smaller drops "
+                                                       "are free, bigger ones hurt by the rest.",
+                &S::powderLandingMetres, 0.0F, 10.0F, "%.1f" },
+        };
+        constexpr BoolField kImpactsSwitches[] = {
+            { "ImpactDamage", "Impact damage", "Hard landings and crashes into trees, rocks and walls hurt, by how "
+                                               "much speed they take away (see the damage sliders). The game's own "
+                                               "fall damage is always off on skis.",
+                &S::impactDamage },
+            { "CrashRagdoll", "Tumble on big hits", "A landing or crash at least as hard as its tumble speed throws "
+                                                    "you into a ragdoll tumble, then you get up.",
+                &S::crashRagdoll },
+            { "HurtTumbleRemovesSkis", "Tumbling with damage takes the skis off",
+                "When a hit that hurts you makes you tumble, the skis come off (they stay in your inventory); put "
+                "them back on to ski again.",
+                &S::hurtTumbleRemovesSkis },
+            { "HarmlessTumbleRemovesSkis", "Tumbling without damage takes the skis off",
+                "When a hit that doesn't hurt you makes you tumble, the skis come off too. Off: you get up still "
+                "wearing them.",
+                &S::harmlessTumbleRemovesSkis },
+        };
+
+        constexpr PhysicsGroup kPhysicsGroups[] = {
+            { Page::Controls, "Steering", "Steering", {}, kSteeringFields },
+            { Page::Speed, "Speed", "Speed", {}, kSpeedFields },
+            { Page::Speed, "Edges", "Edges and turns", {}, kEdgesFields },
+            { Page::Speed, "Skid", "Skid", {}, kSkidFields },
+            { Page::Speed, "Skating", "Skating", {}, kSkatingFields },
+            { Page::Speed, "Powder", "Powder", kPowderSwitches, kPowderFields },
+            { Page::Speed, "BlockedPath", "Blocked path detection and handling", {}, kBlockedFields,
+                "When something stops you, the skis give up the speed they can't use instead of saving it for later. "
+                "Works whether or not impact damage is on." },
+            { Page::Speed, "Advanced", "Advanced", kAdvancedSwitches, kAdvancedFields },
+            { Page::Stamina, "Stamina", "", {}, kStaminaFields },
+            { Page::Impacts, "Impacts", "", kImpactsSwitches, kImpactsFields },
         };
 
         using C = Core::CameraFollowSettings;
@@ -353,9 +446,7 @@ namespace SkiingInSkyrim::Settings
         }
     }
 
-    std::span<const FloatField>  PhysicsFields() noexcept { return kPhysicsFields; }
-    std::span<const BoolField>   PhysicsSwitches() noexcept { return kPhysicsSwitches; }
-    std::span<const FloatField>  StaminaFields() noexcept { return kStaminaFields; }
+    std::span<const PhysicsGroup> PhysicsGroups() noexcept { return kPhysicsGroups; }
     std::span<const CameraField> CameraFields() noexcept { return kCameraFields; }
     std::span<const StanceField> StanceFields() noexcept { return kStanceFields; }
     std::span<const StanceSwitch> StanceSwitches() noexcept { return kStanceSwitches; }
@@ -387,19 +478,16 @@ namespace SkiingInSkyrim::Settings
             if (const auto value = ini.GetInt("Controls", "LookSteersGamepad")) {
                 loaded.lookSteersGamepad = *value != 0;
             }
-            for (const auto& field : kPhysicsFields) {
-                if (const auto value = ini.GetFloat("Physics", field.key)) {
-                    loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
+            for (const auto& group : kPhysicsGroups) {
+                for (const auto& field : group.switches) {
+                    if (const auto value = ini.GetInt(group.section, field.key)) {
+                        loaded.physics.*field.member = *value != 0;
+                    }
                 }
-            }
-            for (const auto& field : PhysicsSwitches()) {
-                if (const auto value = ini.GetInt("Physics", field.key)) {
-                    loaded.physics.*field.member = *value != 0;
-                }
-            }
-            for (const auto& field : kStaminaFields) {
-                if (const auto value = ini.GetFloat("Stamina", field.key)) {
-                    loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
+                for (const auto& field : group.fields) {
+                    if (const auto value = ini.GetFloat(group.section, field.key)) {
+                        loaded.physics.*field.member = std::clamp(*value, field.min, field.max);
+                    }
                 }
             }
             if (const auto value = ini.GetInt("Camera", "FollowTravel")) {
@@ -467,10 +555,6 @@ namespace SkiingInSkyrim::Settings
         text += fmt::format("LookSteersKeyboardMouse = {}\n", state.lookSteersKeyboardMouse ? 1 : 0);
         text += "; Looking around with the right stick moves where the left stick steers (1 on, 0 off).\n";
         text += fmt::format("LookSteersGamepad = {}\n", state.lookSteersGamepad ? 1 : 0);
-        text += "\n[Stamina]\n";
-        for (const auto& field : kStaminaFields) {
-            text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.physics.*field.member);
-        }
         text += "\n[Display]\n";
         text += "; Debug overlay with the skis, velocity, fall line and edge angle (1 on, 0 off).\n";
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
@@ -493,12 +577,14 @@ namespace SkiingInSkyrim::Settings
         for (const auto& field : kCameraFields) {
             text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.camera.*field.member);
         }
-        text += "\n[Physics]\n";
-        for (const auto& field : kPhysicsFields) {
-            text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.physics.*field.member);
-        }
-        for (const auto& field : PhysicsSwitches()) {
-            text += fmt::format("; {} (1 on, 0 off)\n{} = {}\n", field.help, field.key, state.physics.*field.member ? 1 : 0);
+        for (const auto& group : kPhysicsGroups) {
+            text += fmt::format("\n[{}]\n", group.section);
+            for (const auto& field : group.switches) {
+                text += fmt::format("; {} (1 on, 0 off)\n{} = {}\n", field.help, field.key, state.physics.*field.member ? 1 : 0);
+            }
+            for (const auto& field : group.fields) {
+                text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.physics.*field.member);
+            }
         }
 
         std::ofstream file(kPath, std::ios::binary | std::ios::trunc);

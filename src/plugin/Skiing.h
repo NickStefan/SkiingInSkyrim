@@ -12,6 +12,9 @@ namespace SkiingInSkyrim::Skiing
     // movement with the ski model's velocity while skiing is active.
     void ApplyMovement(RE::PlayerCharacter* player, RE::NiPoint3& movement, RE::NiPoint3& rotation);
 
+    // Main thread, before a save loads: what was going on in the last game (a tumble) doesn't carry into it.
+    void Reset();
+
     struct Debug
     {
         bool                 active{ false };
@@ -21,7 +24,6 @@ namespace SkiingInSkyrim::Skiing
         Core::SkiStep        step;
         float                observedSpeed{ 0.0F };
         bool                 hugging{ false };  // holding the skier to the slope over a crest this frame
-        float                fallMetres{ -1.0F };  // off the ground: the fall the game will count, if known
         float                heightCorrection{ 0.0F };  // game units the position was lowered this frame
     };
 

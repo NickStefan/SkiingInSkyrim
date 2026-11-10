@@ -59,4 +59,23 @@ namespace SkiingInSkyrim::Core
     {
         return gravity > 0.0F ? speedLost * speedLost / (2.0F * gravity) : 0.0F;
     }
+
+    float LandingFallMetres(float into, float takeoffInto, float gravity) noexcept
+    {
+        return gravity > 0.0F ? std::max(0.0F, into * into - takeoffInto * takeoffInto) / (2.0F * gravity) : 0.0F;
+    }
+
+    float SpeedInto(Vec3 velocity, Vec3 normal) noexcept
+    {
+        const float length = Length(normal);
+        return length > 1e-4F ? std::max(0.0F, -Dot(velocity, normal) / length) : 0.0F;
+    }
+
+    float FallDamage(float heightUnits, const FallCurve& curve) noexcept
+    {
+        if (!(heightUnits > curve.minimumUnits)) {
+            return 0.0F;
+        }
+        return std::pow((heightUnits - curve.minimumUnits) * curve.mult, curve.exponent);
+    }
 }

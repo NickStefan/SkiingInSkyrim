@@ -110,6 +110,31 @@ namespace SkiingInSkyrim::Core
         float powderSideGrip{ 2.0F };
         float powderLandingMetres{ 3.0F };
 
+        // Landing on a slope going downhill turns some of the fall into speed down it (see LandingVelocity):
+        // this fraction of what it would add beyond the speed you had. 1 is all of it, 0 is none.
+        float landingSpeedKept{ 0.5F };
+
+        // Impact damage, on the game's fall-damage curve: landings by the speed into the slope at touchdown (as
+        // a fall that fast, less powderLandingMetres in powder), crashes by the speed lost sideways into
+        // something at least crashMinSurfaceDegrees steep (trees, rocks, walls; not people or clutter).
+        bool  impactDamage{ true };
+        float landingDamageScale{ 0.5F };
+        float crashDamageScale{ 0.5F };
+        float crashMinSurfaceDegrees{ 70.0F };
+        // A landing at least landingTumbleSpeed hard (m/s into the slope, after the powder's share), or a crash
+        // losing at least crashTumbleSpeed, throws the skier into the game's own ragdoll, pushed on by
+        // ragdollThrow per m/s they were going. The skis come off (kept in the inventory) as set for tumbles that
+        // hurt and ones that don't. The body goes into the ragdoll keeping ragdollSpeedKept of its speed, tumbles
+        // freely for tumbleSlideSeconds, then is braked to a stop.
+        bool  crashRagdoll{ true };
+        bool  hurtTumbleRemovesSkis{ true };
+        bool  harmlessTumbleRemovesSkis{ false };
+        float landingTumbleSpeed{ 9.5F };
+        float crashTumbleSpeed{ 6.7F };
+        float ragdollThrow{ 0.0F };
+        float ragdollSpeedKept{ 0.0F };
+        float tumbleSlideSeconds{ 1.0F };
+
         // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
         // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra
         // (m/s^2), so small crests are absorbed and only real drops give air. 0 seconds turns it off.
@@ -200,12 +225,10 @@ namespace SkiingInSkyrim::Core
     [[nodiscard]] float StaminaCost(const SkiStep& step, bool grounded, float deltaSeconds,
         const SkiSettings& settings = {}) noexcept;
 
-    // Metres of free fall that would land as hard as meeting a slope with the given normal at this velocity
-    // (m/s): only the speed into the slope counts, so landing along it is soft whatever the drop.
-    [[nodiscard]] float ImpactHeight(Vec3 velocity, Vec3 slopeNormal, float gravity) noexcept;
-
-    // ImpactHeight, cushioned by powder if it's on.
-    [[nodiscard]] float LandingHeight(Vec3 velocity, Vec3 slopeNormal, const SkiSettings& settings) noexcept;
+    // The model's velocity (horizontal direction, speed along the ground) right after landing with this
+    // velocity (m/s) on a slope with this normal: the speed into the slope is lost, the rest carries on along
+    // it, so dropping onto a steep face keeps the fall's speed going downhill.
+    [[nodiscard]] Vec2 LandingVelocity(Vec3 velocity, Vec3 slopeNormal) noexcept;
 
     // While briefly off the ground after skiing over a crest: the vertical velocity (m/s) to use instead
     // of velocity.z, following the slope just left (lastNormal) rather than rising off it, plus the extra

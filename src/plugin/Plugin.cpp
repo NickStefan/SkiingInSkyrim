@@ -3,6 +3,7 @@
 #include "plugin/Menu.h"
 #include "plugin/Pose.h"
 #include "plugin/Settings.h"
+#include "plugin/Skiing.h"
 #include "plugin/Skis.h"
 #include "plugin/Tdm.h"
 #include "plugin/Telemetry.h"
@@ -41,6 +42,7 @@ namespace
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
             SkiingInSkyrim::Skis::Reset();
+            SkiingInSkyrim::Skiing::Reset();
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
         case SKSE::MessagingInterface::kNewGame:

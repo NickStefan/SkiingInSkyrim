@@ -12,8 +12,18 @@ Rough order of work. Things move up or down as playtesting shows what matters.
 - Carve pump: a clean carve held through a turn keeps or builds speed, never more than cancelling drag.
 - Skating on flat and gentle uphill ground: stick forward, alternate trigger squeezes, push spread over each stride.
 - Powder setting, steep-slope height jitter fix.
-- Fall damage on skis: steep fast descents no longer count as one long fall (the fall restarts no higher than
-  the slope just left would make it). Powder absorbs a set depth of fall.
+- Skiing stops (skis stay on) during conversations, including NPCs starting one, and while downed
+  (bleedout, including revive mods that only play the animation).
+- Impact damage instead of the game's fall damage on skis (which counted steep descents as one long fall and
+  hurt soft landings on steep faces): landings hurt by the speed the air added into the slope at touchdown, so a
+  big air onto a steep face going downhill is soft, and so is a hop into a ramp skied into anyway; crashes into trees, rocks and walls hurt by the speed lost sideways.
+  Both on the game's fall-damage curve, with damage sliders. Landing on a steep face turns some of the fall
+  into downhill speed (a slider).
+- Tumbling: a big enough landing or crash throws you into the game's ragdoll on the way you were going, and the
+  skis come off (kept in the inventory) if it hurt; harmless tumbles keep them on by default. All optional. Sliders set how much speed the body keeps into the
+  tumble and how long it tumbles before it's braked to a stop; no fall damage counts until you're back on your
+  feet.
+- Skis come off in water (kept in the inventory).
 - Skis as a wearable, craftable item (ESP); wearing them turns skiing on. Ski models placed under the feet.
 - Procedural ski stance, no animation files: knee bend, forward lean, tuck, lean into turns with hip angulation,
   leg IK to the skis, skating strides (V stance, edged push, weight shift, arm swing). HDT-SMP safe.
@@ -22,6 +32,7 @@ Rough order of work. Things move up or down as playtesting shows what matters.
 - Stamina: hard carving and skating strides cost stamina; out of it, edges are weaker and strides don't start.
 - Debug overlay: fall line, ski and travel arrows, edge gauge, slope, skating, mph.
 - Loads on SE 1.5.97 and AE (Address Library); refuses to load on VR.
+- Settings menu in pages: General, Controls, Speed, Body, Camera, Stamina, Impacts.
 
 Controller is the intended way to play; keyboard and mouse work but are rougher. True Directional Movement is a
 soft requirement (see Later).
@@ -33,6 +44,12 @@ soft requirement (see Later).
       surface once surfaces (see Later) exist.
 - [ ] README: what the mod does, controls (controller first), requirements (TDM recommended), install, "works best
       on controller".
+- [ ] Licenses in the Nexus download: the upload is just build/mod/ (the DLL, PDB and ESP), but the libraries
+      compiled into the DLL (MIT and similar) require their license text to travel with the binary, so the
+      download itself has to carry it. Work out which apply (CommonLibSSE-NG and its bundled hde64, spdlog, fmt,
+      the SKSE Menu Framework header, the TDM API header, DirectXMath/DirectXTK if any of it ends up in the DLL)
+      and have the build copy those license texts plus our own LICENSE into build/mod/ (e.g. a licenses folder,
+      as other CommonLibSSE-NG mods ship), so whatever gets zipped for Nexus already includes them.
 - [ ] Push the repository to GitHub.
 
 ## Later / ideas
@@ -53,10 +70,6 @@ soft requirement (see Later).
 - [ ] Powder planing: in deep (snow-deformation) powder the skis, and the body with them, ride deep when slow and
       rise toward the snow surface with speed. Skis are placed by the DLL, so the height is ours to set; the body
       needs a visual-only lift that doesn't disturb the height smoothing. Pairs with snowy-ground detection.
-- [ ] Impact damage (one system for landings and crashes): health lost by how much speed the world takes away
-      at once, so a flat landing or a tree hurts and a landing along the slope or a scrape barely does, on the
-      game's fall-damage curve. Logging it now (no damage yet) to tune; then deal it ourselves and stop the
-      game's own fall damage on skis. Settings: on/off, threshold, damage scale.
 - [ ] First person: turning doesn't work. TDM accepts our yaw but only applies it in its third-person camera,
       and we zero the game's rotation, so look turning is dropped too. Setting the heading directly fixes turning
       but breaks third person (it skips TDM's camera counter-rotation, which the chase camera relies on), and the
@@ -65,6 +78,10 @@ soft requirement (see Later).
 - [ ] Vanilla third person (no TDM) is untested: while moving it ties the view to the body like first person, so
       expect the same issues.
 - [ ] NPC skiers (the plugin is player-only for now).
+- [ ] NPC crashes: skiing into people counts too. The crash ray already sees them (TESHavokUtilities::
+      FindCollidableRef gives the actor); log first, since two character controllers meeting may push each other
+      aside rather than stop dead. Decide what the NPC gets (damage, stagger, knockdown) and make sure it isn't
+      assault: hitting a guard shouldn't start a fight or a bounty.
 
 ## Last
 

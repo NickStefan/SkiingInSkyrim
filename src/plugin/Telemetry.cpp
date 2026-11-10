@@ -74,7 +74,6 @@ namespace SkiingInSkyrim::Telemetry
             float      takeoffSlope{ 0.0F };
             float      peak{ 0.0F };  // metres above the slope taken off from
             float      lastVertical{ 0.0F };
-            float      fallMetres{ -1.0F };  // what the game counts as the fall, last frame in the air
             int        frames{ 0 };
             int        hugFrames{ 0 };
             bool       jumped{ false };
@@ -100,16 +99,15 @@ namespace SkiingInSkyrim::Telemetry
                     hugFrames += ski.hugging ? 1 : 0;
                     jumped = jumped || jumping;
                     lastVertical = velocity.z;
-                    fallMetres = ski.fallMetres;
                     const Core::Vec3 offset{ position.x - start.x, position.y - start.y, position.z - start.z };
                     peak = std::max(peak, (offset.x * plane.x + offset.y * plane.y + offset.z * plane.z) / kUnitsPerMetre);
                     return;
                 }
                 inAir = false;
                 spdlog::info("air {:.2f}s{}: takeoff speed={:.1f}m/s vz={:+.1f} slope={:.0f} | peak above that slope={:.2f}m "
-                             "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames | fall counted={}",
+                             "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames",
                     seconds, jumped ? " (jump)" : "", takeoffSpeed, takeoffVertical, takeoffSlope, peak, lastVertical,
-                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees, hugFrames, frames, fallMetres >= 0.0F ? fmt::format("{:.1f}m", fallMetres) : std::string("?"));
+                    std::acos(std::clamp(ski.ground.normal.z, -1.0F, 1.0F)) * kDegrees, hugFrames, frames);
             }
         };
 
