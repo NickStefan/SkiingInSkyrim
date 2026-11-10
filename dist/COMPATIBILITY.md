@@ -44,7 +44,8 @@ shows whether anything runs after it.
 
 ## Snow deformation (Deformable Terrain, Community Shaders' Snow Deformation)
 
-Not needed. Powder is detected from the landscape itself, so it's the same with or without them.
+Optional, but recommended for a look that matches the gameplay. Whether or not a snow deformation mod is
+installed, snow that isn't a road is treated as powder-like and slows you accordingly.
 
 ## Revive mods (PlayerSelfRevive and similar)
 
