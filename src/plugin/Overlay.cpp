@@ -139,5 +139,7 @@ namespace SkiingInSkyrim::Overlay
             fmt::format("{:.0f} mph", Core::Length(data.velocity) * kMphPerMetrePerSecond));
         Text(list, Add(origin, { 205.0F, 136.0F }), data.grounded ? kText : kFaintText,
             data.grounded ? fmt::format("{:.0f}\u00B0", data.slopeDegrees) : std::string("airborne"));
+        Text(list, Add(origin, { 10.0F, 166.0F }), kFaintText,
+            fmt::format("{} | powder {:.0f}%", data.material, data.powder * 100.0F));
     }
 }

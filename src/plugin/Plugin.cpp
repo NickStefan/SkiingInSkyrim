@@ -24,6 +24,9 @@ namespace
             SkiingInSkyrim::Tdm::Connect();
             SkiingInSkyrim::Camera::Connect();
             break;
+        case SKSE::MessagingInterface::kPostPostLoad:
+            SkiingInSkyrim::Camera::Install();
+            break;
         case SKSE::MessagingInterface::kInputLoaded:
             if (SkiingInSkyrim::Input::Register()) {
                 spdlog::info("input sink registered");

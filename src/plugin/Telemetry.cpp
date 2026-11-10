@@ -104,6 +104,9 @@ namespace SkiingInSkyrim::Telemetry
                     return;
                 }
                 inAir = false;
+                if (!Settings::DetailedLog()) {
+                    return;
+                }
                 spdlog::info("air {:.2f}s{}: takeoff speed={:.1f}m/s vz={:+.1f} slope={:.0f} | peak above that slope={:.2f}m "
                              "| landing vz={:+.1f} slope={:.0f} | hug {}/{} frames",
                     seconds, jumped ? " (jump)" : "", takeoffSpeed, takeoffVertical, takeoffSlope, peak, lastVertical,
@@ -320,7 +323,7 @@ namespace SkiingInSkyrim::Telemetry
                 const bool transition = ski.active && estimate.contact != lastContact;
                 lastContact = estimate.contact;
                 sinceSample += delta;
-                if (!transition && sinceSample < kSampleInterval) {
+                if (!Settings::DetailedLog() || (!transition && sinceSample < kSampleInterval)) {
                     return;
                 }
                 sinceSample = 0.0F;

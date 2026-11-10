@@ -1,12 +1,14 @@
 #include "plugin/Skiing.h"
 
 #include "core/Impact.h"
+#include "core/Snow.h"
 #include "plugin/Camera.h"
 #include "plugin/Havok.h"
 #include "plugin/Input.h"
 #include "plugin/Pose.h"
 #include "plugin/Settings.h"
 #include "plugin/Skis.h"
+#include "plugin/Surface.h"
 #include "plugin/Tdm.h"
 
 namespace SkiingInSkyrim::Skiing
@@ -123,6 +125,10 @@ namespace SkiingInSkyrim::Skiing
             }
             if (player->IsInRagdollState()) {
                 return "ragdoll";
+            }
+            // The get-up animation turns the character, which the chase camera would read as looking around.
+            if (state->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
+                return "getting up";
             }
             if (player->IsInKillMove()) {
                 return "kill move";
@@ -418,9 +424,13 @@ namespace SkiingInSkyrim::Skiing
         float g_tumbleLogSeconds = 0.0F;
         // Once the slide is over the ragdoll's speed across the ground (and up, and its spin) falls by e every
         // 1/kTumbleBrakeRate seconds, and to nothing below kTumbleStopSpeed (Havok units a second, about m/s).
-        // Falling is left to gravity, or a body still in the air would hang there.
+        // Falling is left to gravity, or a body still in the air would hang there, until the whole ragdoll is
+        // slower than kTumbleRestSpeed with the ground right under it: then it's creeping down the slope, and the
+        // game only gets the player up once it's still.
         constexpr float kTumbleBrakeRate = 15.0F;
         constexpr float kTumbleStopSpeed = 0.5F;
+        constexpr float kTumbleRestSpeed = 1.0F;
+        float           g_ragdollFastest = 0.0F;
         // The push comes from this far behind the skier (game units), along the way they were going.
         constexpr float kTumblePushUnits = 50.0F;
 
@@ -460,9 +470,9 @@ namespace SkiingInSkyrim::Skiing
             float fastestAcross{ 0.0F };  // m/s, horizontal
         };
 
-        // Brakes every body in the player's ragdoll by factor (1 leaves it), except for falling. Returns the
+        // Brakes every body in the player's ragdoll by factor (1 leaves it), falling too if settling. Returns the
         // speeds before.
-        RagdollSpeed BrakeRagdoll(RE::PlayerCharacter* player, float factor)
+        RagdollSpeed BrakeRagdoll(RE::PlayerCharacter* player, float factor, bool settling)
         {
             auto* root = player->Get3D(false);
             auto* cell = player->GetParentCell();
@@ -486,12 +496,12 @@ namespace SkiingInSkyrim::Skiing
                 if (factor >= 1.0F) {
                     return RE::BSVisit::BSVisitControl::kContinue;
                 }
-                const bool  moving = across > 1e-3F || velocity.z > 1e-3F;
+                const bool  moving = across > 1e-3F || velocity.z > 1e-3F || (settling && velocity.z < -1e-3F);
                 const float spin = motion.angularVelocity.Length3();
                 if (moving) {
                     const float k = across * factor < kTumbleStopSpeed ? 0.0F : factor;
-                    const float up = velocity.z > 0.0F ? (velocity.z * factor < kTumbleStopSpeed ? 0.0F : velocity.z * factor) :
-                                                         velocity.z;
+                    const float braked = std::fabs(velocity.z) * factor < kTumbleStopSpeed ? 0.0F : velocity.z * factor;
+                    const float up = velocity.z > 0.0F || settling ? braked : velocity.z;
                     body->SetLinearVelocity(RE::hkVector4(velocity.x * k, velocity.y * k, up, 0.0F));
                 }
                 if (spin > 1e-3F) {
@@ -523,6 +533,9 @@ namespace SkiingInSkyrim::Skiing
             g_tumbleHealth = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             g_tumbleRagdollSeconds = 0.0F;
             g_tumbleLogSeconds = 0.0F;
+            g_ragdollFastest = 0.0F;
+            Camera::StartTumble();
+            Camera::WatchState(player, "tumble start", true);
             LogKnockdownSettings();
             const float      horizontal = Core::HorizontalLength(travel);
             const Core::Vec3 direction = horizontal > 1e-3F ? Core::Vec3{ travel.x / horizontal, travel.y / horizontal, 0.0F } :
@@ -563,18 +576,24 @@ namespace SkiingInSkyrim::Skiing
             if (!g_tumbleGuard || !controller) {
                 return;
             }
-            controller->fallStartHeight = player->GetPosition().z;
+            const auto position = player->GetPosition();
+            controller->fallStartHeight = position.z;
             g_tumbleSeconds += std::max(0.0F, delta);
+            Camera::WatchState(player, fmt::format("tumble {:.2f}s camera changed", g_tumbleSeconds).c_str());
             if (player->IsInRagdollState()) {
                 const float slide = Settings::Physics().tumbleSlideSeconds;
                 g_tumbleRagdollSeconds += std::max(0.0F, delta);
                 const bool  braking = g_tumbleRagdollSeconds >= slide;
-                const auto  speeds =
-                    BrakeRagdoll(player, braking ? std::exp(-kTumbleBrakeRate * std::max(0.0F, delta)) : 1.0F);
-                if (g_tumbleSeconds >= g_tumbleLogSeconds) {
+                const bool  settling = braking && g_ragdollFastest < kTumbleRestSpeed &&
+                                      Probe(player, controller, position.z + 30.0F, { 0.0F, 0.0F, -1.0F }).has_value();
+                const auto  speeds = BrakeRagdoll(player,
+                    braking ? std::exp(-kTumbleBrakeRate * std::max(0.0F, delta)) : 1.0F, settling);
+                g_ragdollFastest = speeds.fastest;
+                if (Settings::DetailedLog() && g_tumbleSeconds >= g_tumbleLogSeconds) {
                     g_tumbleLogSeconds = g_tumbleSeconds + 0.5F;
-                    spdlog::info("tumble {:.1f}s: ragdoll fastest {:.1f}m/s ({:.1f} across){}", g_tumbleSeconds,
-                        speeds.fastest, speeds.fastestAcross, braking ? ", braking" : "");
+                    spdlog::info("tumble {:.1f}s: ragdoll fastest {:.1f}m/s ({:.1f} across){} | {}", g_tumbleSeconds,
+                        speeds.fastest, speeds.fastestAcross, settling ? ", settling" : braking ? ", braking" : "",
+                        Camera::Describe(player));
                 }
             }
             const bool down = player->IsInRagdollState() ||
@@ -588,14 +607,18 @@ namespace SkiingInSkyrim::Skiing
             g_tumbleSettled += std::max(0.0F, delta);
             if (g_tumbleSettled >= kTumbleSettleSeconds) {
                 g_tumbleGuard = false;
-                spdlog::info("tumble over after {:.1f}s | health {:.0f} -> {:.0f}", g_tumbleSeconds,
-                    g_tumbleHealth.value_or(0.0F), player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
+                if (!Downed(player)) {
+                    Camera::LeaveKnockdownCamera(player);
+                }
+                spdlog::info("tumble over after {:.1f}s | health {:.0f} -> {:.0f} | {}", g_tumbleSeconds,
+                    g_tumbleHealth.value_or(0.0F), player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth),
+                    Camera::Describe(player));
             }
         }
 
-        // Touching down with this velocity (the last in the air) on a slope with this normal.
+        // Touching down with this velocity (the last in the air) on a slope with this normal, powder 0..1 deep.
         void LandingDamage(RE::PlayerCharacter* player, const Core::Vec3& velocity, const Core::Vec3& takeoff,
-            const Core::Vec3& normal, const Core::SkiSettings& physics)
+            const Core::Vec3& normal, float powder, const Core::SkiSettings& physics)
         {
             const float slope =
                 Degrees(std::acos(std::clamp(normal.z / std::max(Core::Length(normal), 1e-4F), -1.0F, 1.0F)));
@@ -605,7 +628,8 @@ namespace SkiingInSkyrim::Skiing
             const float into = Core::SpeedInto(velocity, normal);
             const float takeoffInto = Core::SpeedInto(takeoff, normal);
             const float metres = Core::LandingFallMetres(into, takeoffInto, physics.gravity);
-            const float cushioned = physics.powder ? std::max(0.0F, metres - physics.powderLandingMetres) : metres;
+            const float cushion = physics.powder ? physics.powderLandingMetres * powder : 0.0F;
+            const float cushioned = std::max(0.0F, metres - cushion);
             const float damage = physics.impactDamage ? ImpactDamage(cushioned, physics.landingDamageScale) : 0.0F;
             if (metres < 3.0F && damage <= 0.0F) {
                 return;
@@ -617,8 +641,9 @@ namespace SkiingInSkyrim::Skiing
             Tumble(player, velocity, std::sqrt(2.0F * std::max(0.0F, physics.gravity) * cushioned),
                 physics.landingTumbleSpeed, damage > 0.0F, physics);
             spdlog::info("landing: {:.1f}m/s into a {:.0f} degree slope ({:.1f} at takeoff) at {:.0f}mph | like a "
-                         "{:.1f}m fall ({:.1f}m after powder) -> damage {:.0f} | health {:.0f} -> {:.0f}",
-                into, slope, takeoffInto, Core::Length(velocity) * 2.23694F, metres, cushioned, damage, health,
+                         "{:.1f}m fall ({:.1f}m after {:.0f}% powder) -> damage {:.0f} | health {:.0f} -> {:.0f}",
+                into, slope, takeoffInto, Core::Length(velocity) * 2.23694F, metres, cushioned,
+                physics.powder ? powder * 100.0F : 0.0F, damage, health,
                 values->GetActorValue(RE::ActorValue::kHealth));
         }
 
@@ -661,6 +686,10 @@ namespace SkiingInSkyrim::Skiing
                 Tumble(player, impact->before, sideways, physics.crashTumbleSpeed, damage > 0.0F, physics);
             }
             const float before = Core::Length(impact->before);
+            if (!crash && !Settings::DetailedLog()) {
+                g_impactHealth.reset();
+                return;
+            }
             spdlog::info("impact: lost {:.1f}m/s ({:+.1f} vertical, {:.1f} sideways) over {} frame{} of {:.1f}m/s "
                          "({:.0f}mph) | hit {} | {} | health {:.0f} -> {:.0f}",
                 lost, impact->lost.z, sideways, impact->frames, impact->frames == 1 ? "" : "s", before,
@@ -730,7 +759,7 @@ namespace SkiingInSkyrim::Skiing
                         g_height.agreeing = 1;
                     }
                     if (g_height.agreeing >= kLearnReadings) {
-                        if (!g_height.offset || std::fabs(*g_height.offset - learned) > 2.0F) {
+                        if (Settings::DetailedLog() && (!g_height.offset || std::fabs(*g_height.offset - learned) > 2.0F)) {
                             spdlog::info("character sits {:.1f} units from the physics body ({})", learned,
                                 gentle ? "gentle ground" : "caught up");
                         }
@@ -755,6 +784,59 @@ namespace SkiingInSkyrim::Skiing
             return lowered;
         }
 
+        // The snow under the skis is read a few times a second (and at every touchdown), then blended in over the
+        // distance skied so patchy ground eases in and out.
+        constexpr float kSurfaceSeconds = 0.1F;
+        constexpr float kSnowBlendMetres = 3.0F;
+        struct Snow
+        {
+            Surface::Reading reading;
+            float            readAge{ kSurfaceSeconds };
+            float            powder{ 1.0F };
+            RE::NiPoint3     lastPosition;
+            std::string      logged;
+        };
+        Snow g_snow;
+
+        void LogSurface(const Surface::Reading& reading)
+        {
+            if (!Settings::DetailedLog()) {
+                return;
+            }
+            const auto stem = reading.texture.substr(reading.texture.find_last_of("\\/") + 1);
+            // Rounded, so it's only logged when it changes enough to matter.
+            auto line = fmt::format(
+                "surface: {} land ({} below, {:.0f} above land) {} ({}) underfoot {} | powder {:.0f}%",
+                reading.onLand ? "on" : "off", LayerName(reading.below), std::round(reading.aboveLandUnits / 10.0F) * 10.0F,
+                Surface::MaterialName(reading.land), stem.empty() ? "-" : stem,
+                Surface::MaterialName(reading.underfoot), std::round(reading.powderCover * 4.0F) * 25.0F);
+            if (line != g_snow.logged) {
+                spdlog::info("{}", line);
+                g_snow.logged = std::move(line);
+            }
+        }
+
+        // How deep in powder the skis are, 0..1, kept in g_snow.
+        void FollowSnow(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
+            const RE::NiPoint3& position, bool grounded, bool snap, float delta, const Core::SkiSettings& physics)
+        {
+            g_snow.readAge += std::max(0.0F, delta);
+            if (snap || g_snow.readAge >= kSurfaceSeconds) {
+                g_snow.reading = Surface::Read(player, controller);
+                g_snow.readAge = 0.0F;
+                LogSurface(g_snow.reading);
+            }
+            const auto& reading = g_snow.reading;
+            const float powder = !physics.autoPowder ? 1.0F : reading.onLand ? reading.powderCover : 0.0F;
+            const float moved = position.GetDistance(g_snow.lastPosition) / kUnitsPerMetre;
+            g_snow.lastPosition = position;
+            if (snap) {
+                g_snow.powder = powder;
+            } else if (grounded) {
+                g_snow.powder = Core::FollowOverDistance(g_snow.powder, powder, moved, kSnowBlendMetres);
+            }
+        }
+
         void SetYaw(RE::PlayerCharacter* player, float yaw)
         {
             if (!Tdm::SetPlayerYaw(yaw)) {
@@ -776,7 +858,11 @@ namespace SkiingInSkyrim::Skiing
             g_debug.inactiveReason = reason;
             SetCommand({});
             SetOverlay({ .active = false });
-            Camera::Reset();
+            if (g_tumbleGuard) {
+                Camera::FilmTumble(player, delta, reason == kDowned);
+            } else {
+                Camera::Reset();
+            }
             // The stance blends out from the last pose, so it keeps where the skis pointed.
             auto body = GetBody();
             body.active = false;
@@ -829,6 +915,13 @@ namespace SkiingInSkyrim::Skiing
         });
         const bool grounded = ground.contact == Core::Contact::Grounded;
         const auto observed = Observed(velocity, grounded);
+        const auto physics = Settings::Physics();
+        if (g_tumbleGuard) {
+            Camera::EndTumbleShot();
+            Camera::LeaveKnockdownCamera(player);
+        }
+        FollowSnow(player, controller, position, grounded, starting || (grounded && g_airVelocity.count > 0), delta,
+            physics);
 
         if (starting) {
             spdlog::info("skiing active");
@@ -840,15 +933,14 @@ namespace SkiingInSkyrim::Skiing
         } else if (g_airVelocity.count > 0) {
             const auto  support = ToVec3(controller->supportNorm);
             const auto  normal = support.z > 0.1F ? support : ground.normal;
-            const auto  landing = Settings::Physics();
             const auto  touchdown = g_airVelocity.Hardest(normal);
             const auto  landed = Core::LandingVelocity(touchdown, normal);
             const auto& flying = g_debug.ski.velocity;
             if (Core::Length(landed) > Core::Length(flying)) {
-                const float kept = std::clamp(landing.landingSpeedKept, 0.0F, 1.0F);
+                const float kept = std::clamp(physics.landingSpeedKept, 0.0F, 1.0F);
                 g_debug.ski.velocity = { flying.x + (landed.x - flying.x) * kept, flying.y + (landed.y - flying.y) * kept };
             }
-            LandingDamage(player, touchdown, g_airVelocity.takeoff, normal, landing);
+            LandingDamage(player, touchdown, g_airVelocity.takeoff, normal, g_snow.powder, physics);
             g_airVelocity.Reset();
         }
 
@@ -858,7 +950,7 @@ namespace SkiingInSkyrim::Skiing
         input.hasNormal = ground.hasNormal;
         input.normal = ground.normal;
         input.yaw = player->data.angle.z;
-        const auto physics = Settings::Physics();
+        input.powder = g_snow.powder;
         Camera::Observe(player);
         ReadControls(input, Camera::ViewYaw(player), Camera::ChaseYaw(player), delta, physics);
         input.hasObserved = !starting;
@@ -931,6 +1023,8 @@ namespace SkiingInSkyrim::Skiing
             .skidding = step.skidding,
             .parked = step.parked,
             .skating = g_sinceStride < kSkatingShownSeconds,
+            .powder = physics.powder ? g_snow.powder : 0.0F,
+            .material = Surface::MaterialName(g_snow.reading.land),
         });
 
         g_debug.active = true;
@@ -944,6 +1038,7 @@ namespace SkiingInSkyrim::Skiing
     {
         g_tumbleGuard = false;
         g_tumbling = false;
+        g_snow = {};
     }
 
     void ApplyMovement(RE::PlayerCharacter* player, RE::NiPoint3& movement, RE::NiPoint3& rotation)

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build SkiingInSkyrim.dll with MSVC under Wine and assemble build/mod (with SkiingInSkyrim.esp).
 
-    python3 tools/build.py          build the plugin and assemble build/mod
+    python3 tools/build.py          build the plugin and assemble build/mod (with docs and licenses from dist/)
     python3 tools/build.py test     build and run the src/core unit tests under Wine
+    python3 tools/build.py source   zip the committed source of HEAD into build/, for uploading with a release
     python3 tools/build.py clean    remove build outputs (keeps the Wine prefix and caches)
 
 Run tools/fetch_toolchain.py once first. Nothing is copied into the game.
@@ -10,8 +11,10 @@ Run tools/fetch_toolchain.py once first. Nothing is copied into the game.
 import concurrent.futures
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -28,7 +31,10 @@ MSVC = ROOT / 'toolchain/msvc/VC/Tools/MSVC' / pins.MSVC_VERSION
 KITS = ROOT / 'toolchain/msvc/Windows Kits/10'
 COMMONLIB = DEPS / 'commonlib-prebuilt'
 THIRD_PARTY = DEPS / 'src'
+DIST = ROOT / 'dist'
 NAME = 'SkiingInSkyrim'
+REPOSITORY = 'https://github.com/NickStefan/SkiingInSkyrim'
+DOCS = ['README.txt', 'CHANGELOG.md', 'COMPATIBILITY.md', 'THIRD-PARTY-NOTICES.md']
 JOBS = int(os.environ.get('JOBS', 4))
 
 DEFINES = [
@@ -179,6 +185,48 @@ def pe_tables(dll):
     return exported, imported
 
 
+def git(*args):
+    return subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def package_docs(folder):
+    """Docs, our license and the third-party license texts, into SKSE/Plugins/SkiingInSkyrim."""
+    text = version()[0]
+    folder.mkdir(parents=True)
+    for doc in DOCS:
+        (folder / doc).write_text((DIST / doc).read_text().replace('@VERSION@', text))
+    shutil.copy2(ROOT / 'LICENSE', folder / 'LICENSE.txt')
+    shutil.copytree(DIST / 'licenses', folder / 'licenses')
+
+    named = set(re.findall(r'licenses/([\w.-]+)', (DIST / 'THIRD-PARTY-NOTICES.md').read_text()))
+    present = {p.name for p in (DIST / 'licenses').iterdir()}
+    if named != present:
+        raise SystemExit(f'THIRD-PARTY-NOTICES.md and dist/licenses disagree: missing {sorted(named - present)}, '
+                         f'not mentioned {sorted(present - named)}')
+    if f'## {text}' not in (DIST / 'CHANGELOG.md').read_text():
+        print(f'warning: CHANGELOG.md has no "## {text}" section')
+
+    commit = git('rev-parse', 'HEAD')
+    lines = [f'{REPOSITORY}/commit/{commit}']
+    if git('status', '--porcelain'):
+        lines.append('Built with uncommitted changes, so this build does not exactly match that commit.')
+        print('warning: uncommitted changes; commitlink.txt says the build does not match its commit')
+    (folder / 'commitlink.txt').write_text('\n'.join(lines) + '\n')
+
+
+def package_source():
+    """git archive of HEAD: the Corresponding Source for a build made from a clean tree at that commit."""
+    if git('status', '--porcelain'):
+        raise SystemExit('Uncommitted changes: commit first, so the source zip matches the build')
+    text = version()[0]
+    archive = BUILD / f'{NAME}-{text}-source.zip'
+    BUILD.mkdir(exist_ok=True)
+    git('archive', '--format=zip', f'--prefix={NAME}-{text}-source/', '-o', str(archive), 'HEAD')
+    if not git('branch', '-r', '--contains', 'HEAD'):
+        print('warning: HEAD is not pushed yet, so the commit link in the build does not resolve')
+    print(f'Wrote {archive.relative_to(ROOT)} ({git("rev-parse", "--short", "HEAD")})')
+
+
 def package(dll, pdb):
     exported, imported = pe_tables(dll)
     missing = {'SKSEPlugin_Load', 'SKSEPlugin_Version'} - exported
@@ -193,6 +241,7 @@ def package(dll, pdb):
     plugins.mkdir(parents=True)
     shutil.copy2(dll, plugins)
     shutil.copy2(pdb, plugins)
+    package_docs(plugins / NAME)
     make_plugin.write(BUILD / 'mod' / make_plugin.NAME)
     print(f'{dll.name}: exports {", ".join(sorted(exported))}')
     print(f'{dll.name}: imports {", ".join(imported)}')
@@ -226,6 +275,9 @@ def main():
     if sys.argv[1:] == ['test']:
         wine_env.ensure_prefix()
         run_tests()
+        return
+    if sys.argv[1:] == ['source']:
+        package_source()
         return
     if sys.argv[1:] == ['clean']:
         for path in (OBJ, BUILD / 'mod', BUILD / (NAME + '.dll'), BUILD / (NAME + '.pdb')):

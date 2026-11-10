@@ -48,6 +48,7 @@ namespace
         SkiState    state;
         SkiSettings settings{ Packed() };
         float       yaw{ 0.0F };
+        float       powder{ 1.0F };
         SkiStep     last;
 
         // Starts already edged so tests about the physics don't depend on the ramp.
@@ -72,6 +73,7 @@ namespace
             input.aimYaw = controls.aimYaw;
             input.pushStrength = controls.push;
             input.tired = controls.tired;
+            input.powder = powder;
             last = StepSki(state, input, settings);
             yaw = last.yaw;
             return last;
@@ -837,7 +839,27 @@ TEST_CASE("powder is slower and bites harder sideways")
     packedSmear.Run(0.5F, kFlat);
     powderSmear.Run(0.5F, kFlat);
     CHECK(powderSmear.Speed() < packedSmear.Speed() - 0.4F);
+}
 
+TEST_CASE("patchy powder is part way between packed snow and deep powder")
+{
+    Skier packed;
+    Skier patchy;
+    Skier deep;
+    patchy.settings.powder = true;
+    patchy.powder = 0.5F;
+    deep.settings.powder = true;
+    packed.Run(30.0F, SlopeDownY(35.0F));
+    patchy.Run(30.0F, SlopeDownY(35.0F));
+    deep.Run(30.0F, SlopeDownY(35.0F));
+    CHECK(patchy.Speed() < packed.Speed() - 0.5F);
+    CHECK(patchy.Speed() > deep.Speed() + 0.5F);
+
+    Skier none;
+    none.settings.powder = true;
+    none.powder = 0.0F;
+    none.Run(30.0F, SlopeDownY(35.0F));
+    CHECK_NEAR(none.Speed(), packed.Speed(), 1e-3F);
 }
 
 TEST_CASE("powder bites at speed on steep runs but leaves gentle cruising mostly alone")

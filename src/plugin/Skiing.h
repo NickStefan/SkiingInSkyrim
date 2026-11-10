@@ -46,6 +46,8 @@ namespace SkiingInSkyrim::Skiing
         bool        skidding{ false };
         bool        parked{ false };
         bool        skating{ false };
+        float       powder{ 0.0F };  // 0..1, how deep in powder the skis are
+        const char* material{ "" };
     };
 
     // Any thread.

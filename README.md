@@ -37,6 +37,10 @@ Proton prefix (`Documents/My Games/Skyrim Special Edition/SKSE`).
 
 ## License
 
-GPL-3.0-or-later; see [LICENSE](LICENSE). CommonLibSSE-NG and the SKSE Menu Framework
-header are GPL-3.0; the True Directional Movement API header is GPL-3.0 with a modding
-exception; spdlog and fmt are MIT.
+GPL-3.0-or-later; see [LICENSE](LICENSE). What's compiled into the DLL and under which
+license is in [dist/THIRD-PARTY-NOTICES.md](dist/THIRD-PARTY-NOTICES.md), with the license
+texts in `dist/licenses/`; the build copies them, the player docs in `dist/` and a link to
+the commit into `build/mod/SKSE/Plugins/SkiingInSkyrim/`.
+
+To release: commit and push, build, then `python3 tools/build.py source` for the source zip
+to upload next to the mod (the GPL requires the matching source to be available).

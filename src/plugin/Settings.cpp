@@ -112,9 +112,13 @@ namespace SkiingInSkyrim::Settings
                 &S::powderSideGrip, 1.0F, 4.0F, "%.2f" },
         };
         constexpr BoolField kPowderSwitches[] = {
-            { "Powder", "Powder", "Deep snow everywhere: slower, skids and stops bite harder, landings are softer "
-                                  "(see the Powder sliders).",
+            { "Powder", "Powder", "Deep snow is slower, skids and stops bite harder, landings are softer (see the "
+                                  "Powder sliders).",
                 &S::powder },
+            { "AutoPowder", "Detect snow", "Powder is as deep as the ground's snow: full off roads, paths and trails "
+                                           "where it's snow all around, none on rock, grass or objects, blending "
+                                           "between over a few metres. Off: powder everywhere.",
+                &S::autoPowder },
         };
 
         constexpr FloatField kAdvancedFields[] = {
@@ -241,6 +245,15 @@ namespace SkiingInSkyrim::Settings
                 &C::lookHoldSeconds, 0.0F, 5.0F, "%.2f" },
             { "LookReturnSeconds", "Look-around return", "Seconds. How lazily the camera eases back after looking around.",
                 &C::lookReturnSeconds, 0.05F, 3.0F, "%.2f" },
+            { "TumbleFreezeSeconds", "Tumble camera freeze", "Seconds the camera stays exactly where it was when "
+                                                             "you tumble, before it follows the body.",
+                &C::tumbleFreezeSeconds, 0.0F, 3.0F, "%.2f" },
+            { "TumbleFollowSeconds", "Tumble camera follow", "Seconds. How lazily the camera drifts after the "
+                                                             "tumbling body; it never turns with it.",
+                &C::tumbleFollowSeconds, 0.2F, 5.0F, "%.2f" },
+            { "TumbleHeightMetres", "Tumble camera height", "Metres. The tumble camera stays at least this high "
+                                                            "above the ground.",
+                &C::tumbleHeightMetres, 0.3F, 5.0F, "%.1f" },
         };
 
         using T = Core::StanceSettings;
@@ -340,6 +353,7 @@ namespace SkiingInSkyrim::Settings
             bool                                    lookSteersKeyboardMouse{ true };
             bool                                    lookSteersGamepad{ false };
             bool                                    traceShaking{ false };
+            bool                                    detailedLog{ false };
             bool                                    stanceEnabled{ true };
             Core::StanceSettings                    stance;
         };
@@ -504,6 +518,9 @@ namespace SkiingInSkyrim::Settings
             if (const auto value = ini.GetInt("Debug", "TraceShaking")) {
                 loaded.traceShaking = *value != 0;
             }
+            if (const auto value = ini.GetInt("Debug", "DetailedLog")) {
+                loaded.detailedLog = *value != 0;
+            }
             if (const auto value = ini.GetInt("Stance", "Enabled")) {
                 loaded.stanceEnabled = *value != 0;
             }
@@ -560,7 +577,10 @@ namespace SkiingInSkyrim::Settings
         text += fmt::format("ShowOverlay = {}\n\n", state.showOverlay ? 1 : 0);
         text += "[Debug]\n";
         text += "; Log every frame while the character shakes up and down (1 on, 0 off). Only for chasing jitter.\n";
-        text += fmt::format("TraceShaking = {}\n\n", state.traceShaking ? 1 : 0);
+        text += fmt::format("TraceShaking = {}\n", state.traceShaking ? 1 : 0);
+        text += "; Log telemetry, surfaces, airs, every impact and the tumble camera as you ski (1 on, 0 off). For\n"
+                "; playtesting and bug reports; it writes several MB an hour.\n";
+        text += fmt::format("DetailedLog = {}\n\n", state.detailedLog ? 1 : 0);
         text += "[Stance]\n";
         text += "; Pose the body like a skier while skiing (1 on, 0 off: the game's own animation shows).\n";
         text += fmt::format("Enabled = {}\n", state.stanceEnabled ? 1 : 0);
@@ -681,6 +701,18 @@ namespace SkiingInSkyrim::Settings
     {
         std::scoped_lock lock(g_lock);
         g_state.traceShaking = trace;
+    }
+
+    bool DetailedLog()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.detailedLog;
+    }
+
+    void SetDetailedLog(bool detailed)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.detailedLog = detailed;
     }
 
     bool StanceEnabled()

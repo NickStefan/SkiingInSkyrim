@@ -161,9 +161,15 @@ namespace SkiingInSkyrim::Core
             return t * t * (3.0F - 2.0F * t);
         }
 
-        float FlatGrip(const SkiSettings& settings) noexcept
+        // How deep in powder, 0..1: none with powder off.
+        float PowderAmount(const SkiInput& input, const SkiSettings& settings) noexcept
         {
-            return settings.flatGrip * (settings.powder ? settings.powderSideGrip : 1.0F);
+            return settings.powder ? std::clamp(input.powder, 0.0F, 1.0F) : 0.0F;
+        }
+
+        float FlatGrip(const SkiSettings& settings, float powder) noexcept
+        {
+            return settings.flatGrip * (1.0F + (settings.powderSideGrip - 1.0F) * powder);
         }
 
         float Smoothstep(float edge0, float edge1, float x) noexcept
@@ -178,7 +184,7 @@ namespace SkiingInSkyrim::Core
         // so the trigger feathers the slip on any slope; beyond that it digs in to the usual grip. Only the
         // uphill edge, the one against the slide, grips. Carving and fast skids keep the usual grip.
         float FeatherGrip(float edgeGrip, float edge, float yaw, Vec2 velocity, Vec3 normal, float normalForce,
-            const SkiSettings& settings) noexcept
+            float powder, const SkiSettings& settings) noexcept
         {
             const Vec2  downhill{ normal.x, normal.y };
             const float speed = Length(velocity);
@@ -193,7 +199,7 @@ namespace SkiingInSkyrim::Core
             if (weight <= 0.0F) {
                 return edgeGrip;
             }
-            const float flat = normalForce * FlatGrip(settings);
+            const float flat = normalForce * FlatGrip(settings, powder);
             const float hold = std::max(kFeatherHoldMargin * settings.gravity * Length(downhill), kFeatherMinFullGrip);
             const float uphillEdge = std::max(0.0F, -edge * std::copysign(1.0F, side));
             float       feather = 0.0F;
@@ -414,13 +420,14 @@ namespace SkiingInSkyrim::Core
         const float speed = std::min(Length(velocity), settings.maxSpeed);
         const float drag = (settings.dragPerSpeedSquared + settings.dragPerSpeedFourth * speed * speed) *
                            (1.0F - std::clamp(settings.tuckDragReduction, 0.0F, 1.0F) * tuck);
-        const float powderDrag = settings.powder && input.grounded ? settings.powderDragPerSpeedFourth * speed * speed : 0.0F;
+        const float powder = PowderAmount(input, settings);
+        const float powderDrag = input.grounded ? powder * settings.powderDragPerSpeedFourth * speed * speed : 0.0F;
         if (input.grounded) {
             const auto n = input.hasNormal ? input.normal : Vec3{ 0.0F, 0.0F, 1.0F };
             const float normalForce = settings.gravity * std::max(0.0F, n.z);
-            float grip = normalForce * (FlatGrip(settings) + settings.edgeGrip * std::tan(gripAngle));
+            float grip = normalForce * (FlatGrip(settings, powder) + settings.edgeGrip * std::tan(gripAngle));
             if (!input.skidHeld) {
-                grip = FeatherGrip(grip, state.edge, yaw, velocity, n, normalForce, settings);
+                grip = FeatherGrip(grip, state.edge, yaw, velocity, n, normalForce, powder, settings);
             }
             result.gripLimit = grip;
 

@@ -111,6 +111,9 @@ namespace SkiingInSkyrim::Settings
     // Per-frame trace in the log while the character shakes vertically.
     [[nodiscard]] bool TraceShaking();
     void               SetTraceShaking(bool trace);
+    // Telemetry, surface, air, impact and tumble camera lines in the log; off, it only logs what changes.
+    [[nodiscard]] bool DetailedLog();
+    void               SetDetailedLog(bool detailed);
 
     // Whether looking around (mouse, right stick) moves where W/A/S/D or the left stick aim: on, they aim
     // relative to where the camera looks; off, relative to where the chase camera points by itself.

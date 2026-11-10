@@ -26,6 +26,11 @@ namespace SkiingInSkyrim::Core
         // Below travelMinSpeed the camera holds still; by travelFullSpeed it follows at the full rate.
         float travelMinSpeed{ 0.5F };
         float travelFullSpeed{ 2.0F };
+        // Tumbling: the camera stays where it was for tumbleFreezeSeconds, then drifts after the body with this
+        // time constant, never lower than tumbleHeightMetres above the ground.
+        float tumbleFreezeSeconds{ 0.4F };
+        float tumbleFollowSeconds{ 1.5F };
+        float tumbleHeightMetres{ 1.5F };
     };
 
     struct CameraFollowState

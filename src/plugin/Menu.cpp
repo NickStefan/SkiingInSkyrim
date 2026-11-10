@@ -76,6 +76,19 @@ namespace SkiingInSkyrim::Menu
             } else {
                 ImGuiMCP::TextDisabled("%s", "SmoothCam: not installed");
             }
+            if (!camera.enhancedDeathCam) {
+                ImGuiMCP::TextDisabled("%s", "Enhanced Death Cam: not installed");
+            } else if (!camera.enhancedDeathCamRagdoll) {
+                Colored(kGood, "Enhanced Death Cam: detected, ragdoll camera off: tumbles use the tumble shot");
+            } else if (camera.smoothCam) {
+                Colored(kGood, "Enhanced Death Cam: detected. With SmoothCam it keeps the game's knockdown camera, "
+                               "so tumbles use the tumble shot");
+            } else {
+                Colored(kWarn, "Enhanced Death Cam: detected. Its ragdoll camera keeps third person in a knockdown, "
+                               "so tumbles have no tumble shot. Set bEnable = false under [Ragdoll Camera] in "
+                               "po3_EnhancedDeathCamera.ini to use it.");
+            }
+            Line(fmt::format("Tumble camera: {}", camera.tumble));
         }
 
         void RenderBinding(Settings::Binding binding, const char* label, const char* prompt)
@@ -217,14 +230,16 @@ namespace SkiingInSkyrim::Menu
             }
             Toggle("Show debug overlay", Settings::ShowOverlay, Settings::SetShowOverlay,
                 "Speed, slope, edge and the skis' direction on screen while skiing.");
+            Toggle("Detailed log", Settings::DetailedLog, Settings::SetDetailedLog,
+                "Writes telemetry, surfaces, airs, every impact and the tumble camera to SkiingInSkyrim.log as you "
+                "ski: several MB an hour. Turn on to report a bug; off, the log only records what changes.");
             Toggle("Log jitter trace", Settings::TraceShaking, Settings::SetTraceShaking,
                 "Writes every frame to the log while the character shakes up and down. Only for chasing jitter; "
                 "leave off otherwise.");
             ImGuiMCP::TextWrapped("%s", "Wear skis (Wooden Skis: firewood and leather strips at a forge) to ski; "
                                         "take them off to walk. Attacks, blocking and readying weapons are off while "
                                         "skiing. Landing along a slope is soft; landing flat or skiing into trees, "
-                                        "rocks and walls hurts (see Impacts). Telemetry is written to the log while "
-                                        "enabled.");
+                                        "rocks and walls hurts (see Impacts).");
 
             ImGuiMCP::SeparatorText("Compatibility");
             RenderTdm();

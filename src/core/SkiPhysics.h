@@ -104,8 +104,10 @@ namespace SkiingInSkyrim::Core
         // on top of drag, so it mostly bites at speed on steep runs and leaves gentle cruising alone),
         // pushes back harder against the skis' sides (flat grip times powderSideGrip, so skids, stops and
         // steered turns bite more), and cushions landings (powderLandingMetres of fall absorbed, so small
-        // drops are free and big ones still hurt).
+        // drops are free and big ones still hurt). Each scales with how deep in powder the skier is (see
+        // SkiInput::powder): with autoPowder, how snowy the ground is off roads and trails; without, everywhere.
         bool  powder{ true };
+        bool  autoPowder{ true };
         float powderDragPerSpeedFourth{ 0.000056F };
         float powderSideGrip{ 2.0F };
         float powderLandingMetres{ 3.0F };
@@ -133,7 +135,7 @@ namespace SkiingInSkyrim::Core
         float crashTumbleSpeed{ 6.7F };
         float ragdollThrow{ 0.0F };
         float ragdollSpeedKept{ 0.0F };
-        float tumbleSlideSeconds{ 1.0F };
+        float tumbleSlideSeconds{ 0.1F };
 
         // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
         // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra
@@ -171,6 +173,7 @@ namespace SkiingInSkyrim::Core
         bool  hasObserved{ false };
         Vec2  observed{};                  // velocity the engine actually delivered, same convention
         bool  tired{ false };              // out of stamina: weaker edges, no skating strides
+        float powder{ 1.0F };              // 0..1, how deep in powder (with powder on): scales its drag and grip
     };
 
     struct SkiState
