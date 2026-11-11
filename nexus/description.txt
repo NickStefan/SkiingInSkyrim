@@ -1,0 +1,62 @@
+Description
+
+Adds a physics-based model for moving on skis, in Skyrim.
+
+[spoiler]
+Gravity is applied to the skier as they descend slopes. The player then controls BOTH where the skis are pointed AND how much the edge-angle of their skis digs into the snow. This allows you to translate the speed you gain from gravity into directions other than just straight down the mountain. You can traverse side-to-side, or across the slope, or even side-slip sideways if you line up your skis the right way while controlling your edges.
+If you've never skied before, it's kind of like how a sailboat can move in directions other than just "where the wind is blowing". The wind direction and the rudder/keel direction combine to make another direction. This isn't a perfect analogy, but it's close enough to get you started.
+[/spoiler]
+
+Installation instructions
+
+Install via mod manager as normal. Or, drag the contents of the mod into your Data folder if you do manual installs. Look for the mod in the SKSE Menu to ensure the mod installed.
+
+Safe to install or uninstall at any time.
+
+Main features
+
+1. Craft "wooden skis" at the forge.
+[spoiler]
+Mod authors may create additional skis by ensuring their ski items have the same keyword as my wooden skis (e.g. SkiingInSkyrim_skis).
+[/spoiler]
+
+2. Equip "wooden skis". They are an invisible item until equipped and use slot 60. While equipped you cannot attack or sheathe/unsheathe your weapons.
+
+3. While on flat ground, you can push "forward" (via WASD or joystick) and then use "attack" (triggers or mouse clicks) to "skate" forward. This only works up to a slight incline.
+
+4. While on a slope, you will gain speed via gravity. You can control your speed by turning your skis perpendicular to the direction of the slope AND applying some edge to your skis via the "attack" controls (triggers or mouse clicks). Keeping your skis more in the direction of the mountain will do less skidding and more "carving" when you engage the edges of the skis. If you want an "oh sh*t bake, you can hold X (controller) or left shift (keyboard).
+
+5. Avoid hitting trees, rocks, and taking big falls. These will knock you down and possibly deal damage. Every foot of descent you ski without falling down, fills a Flow bar. Once filled, this reserve buffers and hits or falls you otherwise would have taken. So if you want to jump off High Hrothgar, you need to first fill the Flow bar. Think of it like skateboarding video games from yesteryear.
+
+Requirements
+
+
+SKSE and Address Library
+
+[spoiler]
+Built and tested on Steam Skyrim 1.6.640. It's built on CommonLibSSE-NG and Address Library, so it should work on
+any version they support: Steam 1.5.97 through 1.7.104, and GOG 1.6.659 and 1.6.1179, with the matching SKSE and
+Address Library. If you're on another version, give it a try and report back. Skyrim VR is not supported.
+[/spoiler]
+
+SKSE Menu Framework
+
+[spoiler]
+The mod is enabled by default, so it might work without SKSE Menu Framework, but I haven't tested it that way.
+[/spoiler]
+
+True Directional Movement
+
+[spoiler]
+The mod currently only works in 3rd person. When I get around to implementing 1st person, it's possible the mod may work without TDM, but I'm not sure yet.
+[/spoiler]
+
+Snow Deformation mods (not really a requirement but the skiing looks so much better with it!)
+
+Source
+
+I'll both upload zips of the source per version and host the source on github. Licenses are shipped along with the mod under SKSE/Plugins/SkiingInSkyrim/licenses/
+
+[spoiler]
+https://github.com/NickStefan/SkiingInSkyrim/tree/master
+[/spoiler]

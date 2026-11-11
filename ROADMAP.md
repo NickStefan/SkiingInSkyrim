@@ -79,8 +79,8 @@ soft requirement (see Later).
 
 ## Next: release
 
-- [ ] Release 0.1.0 (Skyrim's 15th anniversary, Nov 11 2026): last in-game test of this build, push, then
-      `build.py source` and upload the mod and the source zip to Nexus.
+- [x] Release 0.1.0 (Skyrim's 15th anniversary, Nov 11 2026): last in-game test of this build, push, then
+      `build.py source` and upload the mod and the source zip to Nexus. The page text is nexus/description.txt.
 - [x] Licenses in the Nexus download: the build copies dist/ (README, CHANGELOG, COMPATIBILITY,
       THIRD-PARTY-NOTICES, licenses/) and our LICENSE into build/mod/SKSE/Plugins/SkiingInSkyrim/ (nothing at
       the Data root, where other mods' LICENSE.txt files would collide), plus commitlink.txt pointing at the
