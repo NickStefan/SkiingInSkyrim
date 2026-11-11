@@ -11,13 +11,17 @@ Proton 10's Wine. Everything is fetched into this directory (`deps/`, `toolchain
 
 ```sh
 python3 tools/fetch_toolchain.py   # once; downloads ~2.5 GB and accepts the VS Build Tools license
-python3 tools/build.py             # builds build/mod/SKSE/Plugins/SkiingInSkyrim.dll
+python3 tools/build.py             # builds build/mod: the DLL, SkiingInSkyrim.esp and SkiingInSkyrim.bsa
 python3 tools/build.py test        # builds and runs src/core unit tests under Wine
 python3 tools/build.py clean
 ```
 
 `SIS_PROTON` or `SIS_WINE` select another Wine; `JOBS` limits parallel compiles.
 The build uses its own Wine prefix in `build/wine`, with `S:` mapped to this directory.
+
+The ski sounds are made from the recordings in `assets/sounds/` (see its README) with `ffmpeg`, which
+must be on the `PATH`; they're packed, uncompressed, into `SkiingInSkyrim.bsa`, which the game loads
+with the ESP.
 
 ## Install
 

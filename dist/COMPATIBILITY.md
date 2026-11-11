@@ -57,6 +57,14 @@ over once you stop rolling.
 Tumbles use the game's own ragdoll, so ragdoll and skeleton mods change how a tumble looks. Physics above 60 FPS
 can make ragdolls flail harder.
 
+## Sound mods
+
+Works. While you ski, your own footsteps are silenced (a hook on the game's footstep handling skips only the
+player, only while skiing) and the skis play their own sounds; NPC footsteps and every other sound are untouched.
+To replace the ski sounds, ship files with the same names under `Sound/FX/SkiingInSkyrim/` (loose files, or an
+archive that loads after `SkiingInSkyrim.bsa`). The Sound page can turn the ski sounds or the footstep silencing
+off.
+
 ## HDT-SMP
 
 Safe: the ski stance leaves the physics bones to the game.

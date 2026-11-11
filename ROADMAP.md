@@ -51,24 +51,32 @@ Rough order of work. Things move up or down as playtesting shows what matters.
   log" (General page, off by default) adds telemetry, surfaces, airs, every impact and the tumble camera
   (about 7.5 MB an hour, three quarters of it telemetry).
 - Loads on SE 1.5.97 and AE (Address Library); refuses to load on VR.
-- Settings menu in pages: General, Controls, Speed, Body, Camera, Stamina, Impacts.
+- Sounds: the player's footsteps silenced while skiing (BGSImpactManager's footstep sink skips the player).
+  Event sounds only (core/SkiSound): a turn sound as the path starts curving each way, skids while sliding
+  sideways (repeating), skating strides, landings and crashes. Running straight is quiet. Turns and skids are
+  our recordings on every ground (Nick's foley in assets/sounds; tools/sounds.py slices, filters and levels
+  them, make_plugin adds a SNDR per set, tools/bsa.py packs them uncompressed into SkiingInSkyrim.bsa).
+  Powder and packed sets play together, split by the powder share; powder is currently the packed recordings,
+  5 dB quieter (pitched down and Nick's own powder takes sounded worse). Strides, landings and crashes use the
+  game's sneak footsteps and jump-landings for the ground (crashes: wood for trees and props, stone
+  otherwise). Tried and removed: a continuous glide of sneak footsteps (didn't read) and a wind loop (awful).
+- Settings menu in pages: General, Controls, Speed, Body, Camera, Sound, Stamina, Impacts.
 
 Controller is the intended way to play; keyboard and mouse work but are rougher. True Directional Movement is a
 soft requirement (see Later).
 
 ## Next: release
 
-- [ ] Footsteps: check whether the walk/run animation under the stance still plays footstep sounds; silence them.
-- [ ] Sounds: edge scrape that grows with skidding, carve hiss with speed, powder whoosh, landings. Pick them by
-      surface once surfaces (see Later) exist.
-- [ ] README: what the mod does, controls (controller first), requirements (TDM recommended), install, "works best
-      on controller".
+- [ ] Knockdown audio: the game muffles everything (like being underwater) and plays a windy loop while the
+      player is ragdolled; Immersive Sounds Compendium has an option to mute the loop, so it's vanilla. Nothing
+      in Skyrim.esm is tied to it. The tumble log now has a "water system" line a second into each ragdoll: if
+      it says the player is underwater, clear that flag while tumbling; if dry, it's in the engine (later). Also
+      check it isn't the low-health effect (crashes have left health at 9).
 - [x] Licenses in the Nexus download: the build copies dist/ (README, CHANGELOG, COMPATIBILITY,
       THIRD-PARTY-NOTICES, licenses/) and our LICENSE into build/mod/SKSE/Plugins/SkiingInSkyrim/ (nothing at
       the Data root, where other mods' LICENSE.txt files would collide), plus commitlink.txt pointing at the
       commit it was built from. `build.py source` zips the committed source for the Nexus optional file (GPL
       Corresponding Source). Keep CHANGELOG.md's section for each VERSION up to date.
-- [ ] Push the repository to GitHub.
 
 ## Later / ideas
 
@@ -78,7 +86,7 @@ soft requirement (see Later).
       so steepness still wins: snow as now; ice faster with weaker edges; grass and mud slower; dirt, sand and
       gravel slower still; stone and wood (roads, towns) heavy, mostly pushing on the flat. Unknown material counts
       as snow; blend changes over a short distance; keep the last surface in the air. One setting, "non-snow
-      friction" (0 = surfaces ignored). Later: stone scrape vs snow hiss sounds, skating on grass costs more,
+      friction" (0 = surfaces ignored). Later: own scrape sounds for stone and ice, skating on grass costs more,
       Seasons readings. The powder probe (plugin/Surface) already reads the land material and texture at the
       feet, the character controller's surfaceMaterial (what footsteps use, rocks included) and whether you're
       on the landscape or an object; the surface: log lines show them. The landscape's collision is mostly on

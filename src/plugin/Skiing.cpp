@@ -8,6 +8,7 @@
 #include "plugin/Pose.h"
 #include "plugin/Settings.h"
 #include "plugin/Skis.h"
+#include "plugin/Sounds.h"
 #include "plugin/Surface.h"
 #include "plugin/Tdm.h"
 
@@ -595,6 +596,13 @@ namespace SkiingInSkyrim::Skiing
                         speeds.fastest, speeds.fastestAcross, settling ? ", settling" : braking ? ", braking" : "",
                         Camera::Describe(player));
                 }
+                if (g_tumbleRagdollSeconds >= 1.0F && g_tumbleRagdollSeconds - std::max(0.0F, delta) < 1.0F) {
+                    const auto* water = RE::TESWaterSystem::GetSingleton();
+                    spdlog::info("tumble {:.1f}s: water system: {}{}, underwater height {:.0f}, player at {:.0f}",
+                        g_tumbleSeconds, !water ? "?" : water->playerUnderwater ? "player underwater" : "player dry",
+                        water && water->partiallyUnderwater ? " (partly)" : "", water ? water->underwaterHeight : 0.0F,
+                        position.z);
+                }
             }
             const bool down = player->IsInRagdollState() ||
                               player->AsActorState()->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
@@ -647,6 +655,14 @@ namespace SkiingInSkyrim::Skiing
                 values->GetActorValue(RE::ActorValue::kHealth));
         }
 
+        // This frame's crash, for its sound: m/s lost and what was hit.
+        struct CrashSound
+        {
+            float          speed{ 0.0F };
+            Sounds::Ground ground{ Sounds::Ground::Stone };
+        };
+        CrashSound g_crashSound;
+
         void TrackImpacts(RE::PlayerCharacter* player, RE::bhkCharacterController* controller,
             const RE::NiPoint3& position, const Core::Vec3& velocity, bool airborne,
             const std::optional<Core::Vec3>& hugged, float bodyZ, const Core::SkiSettings& physics, float delta)
@@ -683,6 +699,9 @@ namespace SkiingInSkyrim::Skiing
             const float damage = crash && physics.impactDamage ? ImpactDamage(metres, physics.crashDamageScale) : 0.0F;
             Hurt(player, damage);
             if (crash) {
+                g_crashSound = { sideways, hit->layer == RE::COL_LAYER::kTrees || hit->layer == RE::COL_LAYER::kProps ?
+                                               Sounds::Ground::Wood :
+                                               Sounds::Ground::Stone };
                 Tumble(player, impact->before, sideways, physics.crashTumbleSpeed, damage > 0.0F, physics);
             }
             const float before = Core::Length(impact->before);
@@ -858,6 +877,7 @@ namespace SkiingInSkyrim::Skiing
             g_debug.inactiveReason = reason;
             SetCommand({});
             SetOverlay({ .active = false });
+            Sounds::Stop();
             if (g_tumbleGuard) {
                 Camera::FilmTumble(player, delta, reason == kDowned);
             } else {
@@ -922,6 +942,7 @@ namespace SkiingInSkyrim::Skiing
         }
         FollowSnow(player, controller, position, grounded, starting || (grounded && g_airVelocity.count > 0), delta,
             physics);
+        float landingSpeed = 0.0F;
 
         if (starting) {
             spdlog::info("skiing active");
@@ -940,6 +961,7 @@ namespace SkiingInSkyrim::Skiing
                 const float kept = std::clamp(physics.landingSpeedKept, 0.0F, 1.0F);
                 g_debug.ski.velocity = { flying.x + (landed.x - flying.x) * kept, flying.y + (landed.y - flying.y) * kept };
             }
+            landingSpeed = std::max(0.0F, Core::SpeedInto(touchdown, normal));
             LandingDamage(player, touchdown, g_airVelocity.takeoff, normal, g_snow.powder, physics);
             g_airVelocity.Reset();
         }
@@ -1006,7 +1028,22 @@ namespace SkiingInSkyrim::Skiing
         }
         const bool airborne =
             controller->surfaceInfo.supportedState.get() != RE::hkpSurfaceInfo::SupportedState::kSupported;
+        g_crashSound = {};
         TrackImpacts(player, controller, position, velocity, airborne, hugged, BodyHeight(controller), physics, delta);
+        Sounds::Update(player,
+            {
+                .deltaSeconds = delta,
+                .grounded = grounded,
+                .speed = Core::Length(step.velocity),
+                .slipDegrees = step.slipDegrees,
+                .turnAcceleration = g_turnAcceleration,
+                .powder = physics.powder ? g_snow.powder : 0.0F,
+                .strideStarted = step.skated,
+                .strideSide = step.strideSide,
+                .landingSpeed = landingSpeed,
+                .crashSpeed = g_crashSound.speed,
+            },
+            Sounds::GroundOf(g_snow.reading.underfoot, g_snow.reading.land), g_crashSound.ground);
         CancelFall(controller, position);
         g_debug.heightCorrection = SyncHeight(player, controller, ground, physics, delta);
         SetOverlay({

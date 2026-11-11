@@ -5,6 +5,7 @@
 #include "plugin/Settings.h"
 #include "plugin/Skiing.h"
 #include "plugin/Skis.h"
+#include "plugin/Sounds.h"
 #include "plugin/Tdm.h"
 #include "plugin/Telemetry.h"
 
@@ -75,5 +76,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SkiingInSkyrim::Telemetry::Install();
     SkiingInSkyrim::Input::Install();
     SkiingInSkyrim::Pose::Install();
+    SkiingInSkyrim::Sounds::Install();
     return true;
 }

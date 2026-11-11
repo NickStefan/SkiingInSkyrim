@@ -6,6 +6,7 @@
 #include "plugin/Overlay.h"
 #include "plugin/Settings.h"
 #include "plugin/SkiingState.h"
+#include "plugin/Sounds.h"
 #include "plugin/Tdm.h"
 
 #include <SKSEMenuFramework.h>
@@ -332,6 +333,38 @@ namespace SkiingInSkyrim::Menu
             }
         }
 
+        void __stdcall RenderSound()
+        {
+            ImGuiMCP::TextWrapped("%s", "Running straight is quiet, as in good snow. The skis sound as each turn "
+                                        "starts and at each change of direction, while skidding, with each skating "
+                                        "stride, and on landings and crashes. Strides, landings and crashes use the "
+                                        "game's own sounds for the ground.");
+            const auto info = Sounds::GetInfo();
+            if (!info.hooked) {
+                Colored(kWarn, "Footstep hook: not installed");
+            }
+            if (*info.ground) {
+                Line(fmt::format("Skiing on: {}", info.ground));
+            }
+            Hint();
+            auto sound = Settings::Sound();
+            bool changed = false;
+            bool finished = false;
+            Checkboxes(sound, Settings::SoundSwitches(), changed, finished);
+            Sliders(sound, Settings::SoundFields(), changed, finished);
+            ImGuiMCP::Spacing();
+            if (ResetButton()) {
+                sound = {};
+                changed = finished = true;
+            }
+            if (changed) {
+                Settings::SetSound(sound);
+            }
+            if (finished) {
+                Settings::Save();
+            }
+        }
+
         void __stdcall RenderStamina()
         {
             Hint();
@@ -362,6 +395,7 @@ namespace SkiingInSkyrim::Menu
         SKSEMenuFramework::AddSectionItem("Speed", RenderSpeed);
         SKSEMenuFramework::AddSectionItem("Body", RenderBody);
         SKSEMenuFramework::AddSectionItem("Camera", RenderCameraPage);
+        SKSEMenuFramework::AddSectionItem("Sound", RenderSound);
         SKSEMenuFramework::AddSectionItem("Stamina", RenderStamina);
         SKSEMenuFramework::AddSectionItem("Impacts", RenderImpacts);
         SKSEMenuFramework::AddInputEvent(OnFrameworkInput);

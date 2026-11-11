@@ -13,4 +13,6 @@ First release.
 - Impacts: crashes and flat landings hurt in place of the game's fall damage, and big ones throw you into a
   tumble, filmed by a steady tumble camera.
 - Stamina for hard carving and skating.
+- Ski sounds: turns, skids and hockey stops (recorded foley, softer in powder), skating strides, landings and
+  crashes. Running straight is quiet, and the walking footsteps under the ski stance are silenced.
 - Settings in the SKSE Menu Framework menu, with an optional debug overlay.

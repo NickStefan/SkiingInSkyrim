@@ -256,6 +256,46 @@ namespace SkiingInSkyrim::Settings
                 &C::tumbleHeightMetres, 0.3F, 5.0F, "%.1f" },
         };
 
+        using A = Core::SkiSoundSettings;
+        constexpr SoundSwitch kSoundSwitches[] = {
+            { "Enabled", "Ski sounds", "Turns, skids, skating strides, landings and crashes. Running straight is "
+                                       "quiet, as in good snow.",
+                &A::enabled },
+            { "SilenceFootsteps", "Silence footsteps", "The walking animation under the ski stance plays footsteps; "
+                                                       "keep them quiet while skiing.",
+                &A::silenceFootsteps },
+        };
+        constexpr SoundField kSoundFields[] = {
+            { "Volume", "Volume", "All the ski sounds, on top of the game's own volume sliders.", &A::volume, 0.0F,
+                1.0F, "%.2f" },
+            { "TurnVolume", "Turns", "A sound as each turn starts and at each change of direction, louder the faster "
+                                     "and harder.",
+                &A::turnVolume, 0.0F, 1.0F, "%.2f" },
+            { "SkidVolume", "Skids", "The skis sliding sideways: skids and hockey stops, louder the faster.",
+                &A::skidVolume, 0.0F, 1.0F, "%.2f" },
+            { "StrideVolume", "Skating strides", "Each skating stride's push.", &A::strideVolume, 0.0F, 1.0F, "%.2f" },
+            { "LandingVolume", "Landings and crashes", "Touching down after air, and skiing into trees, rocks and "
+                                                       "walls; louder the harder.",
+                &A::landingVolume, 0.0F, 1.0F, "%.2f" },
+            { "TurnMinSpeed", "Turns from", "m/s. Slower turns are silent.", &A::turnMinSpeed, 0.0F, 15.0F, "%.1f" },
+            { "TurnFullSpeed", "Turns full at", "m/s. Turns are at full volume from this speed.", &A::turnFullSpeed,
+                2.0F, 40.0F, "%.1f" },
+            { "TurnAcceleration", "Counts as a turn", "m/s^2 the path curves at. Lower makes gentler turns sound too.",
+                &A::turnAcceleration, 0.5F, 15.0F, "%.1f" },
+            { "SkidStartSpeed", "Skids from", "m/s sideways. Slower side-slips are silent.", &A::skidStartSpeed, 0.2F,
+                5.0F, "%.1f" },
+            { "SkidFullSpeed", "Skids full at", "m/s sideways. Skids are at full volume from this speed.",
+                &A::skidFullSpeed, 1.0F, 20.0F, "%.1f" },
+            { "SkidRepeatSeconds", "Long skid repeat", "Seconds. A skid that keeps going plays another sound this "
+                                                       "often (varied a little).",
+                &A::skidRepeatSeconds, 0.2F, 3.0F, "%.2f" },
+            { "PitchVariation", "Pitch variation", "Each sound's pitch is moved up or down by up to this fraction, "
+                                                   "so repeats don't sound the same.",
+                &A::pitchVariation, 0.0F, 0.3F, "%.2f" },
+            { "VolumeVariation", "Volume variation", "Each sound is up to this fraction quieter, at random.",
+                &A::volumeVariation, 0.0F, 0.8F, "%.2f" },
+        };
+
         using T = Core::StanceSettings;
         constexpr StanceField kStanceFields[] = {
             { "AnkleFlexDegrees", "Ankle flex", "Degrees the shins lean forward.", &T::ankleFlexDegrees, 0.0F, 45.0F, "%.0f" },
@@ -356,6 +396,7 @@ namespace SkiingInSkyrim::Settings
             bool                                    detailedLog{ false };
             bool                                    stanceEnabled{ true };
             Core::StanceSettings                    stance;
+            Core::SkiSoundSettings                  sound;
         };
 
         std::mutex g_lock;
@@ -464,6 +505,8 @@ namespace SkiingInSkyrim::Settings
     std::span<const CameraField> CameraFields() noexcept { return kCameraFields; }
     std::span<const StanceField> StanceFields() noexcept { return kStanceFields; }
     std::span<const StanceSwitch> StanceSwitches() noexcept { return kStanceSwitches; }
+    std::span<const SoundField> SoundFields() noexcept { return kSoundFields; }
+    std::span<const SoundSwitch> SoundSwitches() noexcept { return kSoundSwitches; }
 
     void Load()
     {
@@ -534,6 +577,16 @@ namespace SkiingInSkyrim::Settings
                     loaded.stance.*field.member = *value != 0;
                 }
             }
+            for (const auto& field : kSoundSwitches) {
+                if (const auto value = ini.GetInt("Sound", field.key)) {
+                    loaded.sound.*field.member = *value != 0;
+                }
+            }
+            for (const auto& field : kSoundFields) {
+                if (const auto value = ini.GetFloat("Sound", field.key)) {
+                    loaded.sound.*field.member = std::clamp(*value, field.min, field.max);
+                }
+            }
             spdlog::info("settings loaded from {}", kPath);
         } else {
             spdlog::info("no {}, using defaults", kPath);
@@ -589,6 +642,13 @@ namespace SkiingInSkyrim::Settings
         }
         for (const auto& field : kStanceFields) {
             text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.stance.*field.member);
+        }
+        text += "\n[Sound]\n";
+        for (const auto& field : kSoundSwitches) {
+            text += fmt::format("; {} (1 on, 0 off)\n{} = {}\n", field.help, field.key, state.sound.*field.member ? 1 : 0);
+        }
+        for (const auto& field : kSoundFields) {
+            text += fmt::format("; {}\n{} = {}\n", field.help, field.key, state.sound.*field.member);
         }
         text += "\n";
         text += "[Camera]\n";
@@ -737,6 +797,18 @@ namespace SkiingInSkyrim::Settings
     {
         std::scoped_lock lock(g_lock);
         g_state.stance = stance;
+    }
+
+    Core::SkiSoundSettings Sound()
+    {
+        std::scoped_lock lock(g_lock);
+        return g_state.sound;
+    }
+
+    void SetSound(const Core::SkiSoundSettings& sound)
+    {
+        std::scoped_lock lock(g_lock);
+        g_state.sound = sound;
     }
 
     bool LookSteersKeyboardMouse()

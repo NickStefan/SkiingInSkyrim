@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Read Skyrim SE archives (BSA version 105) without extra modules, for inspecting vanilla assets.
+"""Skyrim SE archives (BSA version 105) without extra modules: read vanilla assets, write the mod's own.
 
     python3 tools/bsa.py list ARCHIVE [PATTERN]          names matching a regular expression
     python3 tools/bsa.py bounds ARCHIVE NAME [NAME...]   size and axes of each mesh's shapes
 
-Only reads; writes nothing.
+write() packs files into a new archive (used by build.py); the commands only read.
 """
 
+import os
 import re
 import struct
 import sys
@@ -14,6 +15,75 @@ import sys
 COMPRESSED = 0x4
 EMBEDDED_NAMES = 0x100
 SIZE_COMPRESSION_TOGGLE = 0x40000000
+VERSION = 105
+INCLUDE_FOLDER_NAMES = 0x1
+INCLUDE_FILE_NAMES = 0x2
+RETAIN_FILE_NAMES = 0x10  # set on the vanilla sound archive
+# Content flags for the header: what kinds of file the archive holds.
+CONTENT = {'.nif': 0x1, '.dds': 0x2, '.xml': 0x4, '.swf': 0x4, '.wav': 0x8, '.xwm': 0x8, '.fuz': 0x10}
+
+
+def name_hash(name, folder=False):
+    """The game's hash of a lowercase path or file name, which it looks files up by."""
+    name = name.lower().replace('/', '\\')
+    root, ext = (name, '') if folder else os.path.splitext(name)
+    raw = root.encode('latin1')
+    length = len(raw)
+    low = 0
+    if length:
+        low = raw[-1] | ((raw[-2] if length > 2 else 0) << 8) | (length << 16) | (raw[0] << 24)
+    low |= {'.kf': 0x80, '.nif': 0x8000, '.dds': 0x8080, '.wav': 0x80000000}.get(ext, 0)
+    middle = 0
+    for c in raw[1:-2] if length > 3 else b'':
+        middle = (middle * 0x1003F + c) & 0xFFFFFFFF
+    tail = 0
+    for c in ext.encode('latin1'):
+        tail = (tail * 0x1003F + c) & 0xFFFFFFFF
+    return (((middle + tail) & 0xFFFFFFFF) << 32) | low
+
+
+def write(path, files):
+    """Writes an uncompressed archive (sounds must not be compressed) of {path inside the archive: bytes}."""
+    folders = {}
+    for name, data in files.items():
+        folder, _, file = name.lower().replace('/', '\\').rpartition('\\')
+        folders.setdefault(folder, {})[file] = data
+    order = sorted(folders, key=lambda f: name_hash(f, folder=True))
+    contents = {f: sorted(folders[f], key=name_hash) for f in order}
+    file_count = sum(len(names) for names in contents.values())
+    folder_names_length = sum(len(f) + 1 for f in order)
+    file_names = b''.join(n.encode('latin1') + b'\0' for f in order for n in contents[f])
+    content_flags = 0
+    for f in order:
+        for n in contents[f]:
+            content_flags |= CONTENT.get(os.path.splitext(n)[1], 0)
+
+    header_size, folder_record_size, file_record_size = 36, 24, 16
+    records_start = header_size + folder_record_size * len(order)
+    blocks_size = sum(1 + len(f) + 1 + file_record_size * len(contents[f]) for f in order)
+    data_offset = records_start + blocks_size + len(file_names)
+
+    out = bytearray(struct.pack('<4sIIIIIIIHH', b'BSA\0', VERSION, header_size,
+                                INCLUDE_FOLDER_NAMES | INCLUDE_FILE_NAMES | RETAIN_FILE_NAMES, len(order), file_count,
+                                folder_names_length, len(file_names), content_flags, 0))
+    block_at = records_start
+    for f in order:
+        # The offset counts the file names' length as well, as the game expects.
+        out += struct.pack('<QIIQ', name_hash(f, folder=True), len(contents[f]), 0, block_at + len(file_names))
+        block_at += 1 + len(f) + 1 + file_record_size * len(contents[f])
+    at = data_offset
+    for f in order:
+        out += bytes([len(f) + 1]) + f.encode('latin1') + b'\0'
+        for n in contents[f]:
+            size = len(folders[f][n])
+            out += struct.pack('<QII', name_hash(n), size, at)
+            at += size
+    out += file_names
+    for f in order:
+        for n in contents[f]:
+            out += folders[f][n]
+    with open(path, 'wb') as handle:
+        handle.write(out)
 
 
 def lz4_block(data, out, end_size=None):

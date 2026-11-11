@@ -2,6 +2,7 @@
 
 #include "core/CameraFollow.h"
 #include "core/SkiPhysics.h"
+#include "core/SkiSound.h"
 #include "core/Stance.h"
 
 namespace SkiingInSkyrim::Settings
@@ -52,6 +53,8 @@ namespace SkiingInSkyrim::Settings
     using CameraField = FloatFieldOf<Core::CameraFollowSettings>;
     using StanceField = FloatFieldOf<Core::StanceSettings>;
     using StanceSwitch = BoolFieldOf<Core::StanceSettings>;
+    using SoundField = FloatFieldOf<Core::SkiSoundSettings>;
+    using SoundSwitch = BoolFieldOf<Core::SkiSoundSettings>;
 
     // Menu pages the physics settings are shown on.
     enum class Page
@@ -77,6 +80,8 @@ namespace SkiingInSkyrim::Settings
     [[nodiscard]] std::span<const CameraField>  CameraFields() noexcept;
     [[nodiscard]] std::span<const StanceField>  StanceFields() noexcept;
     [[nodiscard]] std::span<const StanceSwitch> StanceSwitches() noexcept;
+    [[nodiscard]] std::span<const SoundField>   SoundFields() noexcept;
+    [[nodiscard]] std::span<const SoundSwitch>  SoundSwitches() noexcept;
 
     // Main thread, once game data and input devices exist.
     void Load();
@@ -95,6 +100,9 @@ namespace SkiingInSkyrim::Settings
     void                               SetStanceEnabled(bool enabled);
     [[nodiscard]] Core::StanceSettings Stance();
     void                               SetStance(const Core::StanceSettings& stance);
+
+    [[nodiscard]] Core::SkiSoundSettings Sound();
+    void                                 SetSound(const Core::SkiSoundSettings& sound);
 
     [[nodiscard]] Button      GetBinding(Binding binding);
     [[nodiscard]] std::string BindingName(Binding binding);  // "X", or empty when unbound

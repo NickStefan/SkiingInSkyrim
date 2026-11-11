@@ -20,8 +20,9 @@ your facing from it.
 
 INSTALLATION
 Install the archive with your mod manager and enable SkiingInSkyrim.esp
-(ESL-flagged, it doesn't use a load order slot). The source archive on the
-same page is not a mod install.
+(ESL-flagged, it doesn't use a load order slot). SkiingInSkyrim.bsa holds
+the ski sounds and loads with it. The source archive on the same page is
+not a mod install.
 
 Safe to install or uninstall at any time: it adds no scripts and saves
 nothing into your save game, so it's worth just trying out. Uninstalling
@@ -41,7 +42,7 @@ Controls (controller):
 Keyboard and mouse: W/A/S/D steer, the mouse buttons edge.
 
 Everything is in the SKSE Menu Framework menu under Skiing in Skyrim:
-speed, body, camera, stamina and impact settings, plus a Compatibility
+speed, body, camera, sound, stamina and impact settings, plus a Compatibility
 section that shows which related mods were found.
 
 Crashes into trees, rocks and walls, and landing flat from a big air, hurt

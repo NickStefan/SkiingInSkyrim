@@ -19,7 +19,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fetch_toolchain as pins  # noqa: E402
+import bsa  # noqa: E402
 import make_plugin  # noqa: E402
+import sounds  # noqa: E402
 import wine_env  # noqa: E402
 
 ROOT = wine_env.ROOT
@@ -227,6 +229,19 @@ def package_source():
     print(f'Wrote {archive.relative_to(ROOT)} ({git("rev-parse", "--short", "HEAD")})')
 
 
+def package_sounds():
+    """The ski sounds, packed into SkiingInSkyrim.bsa (loaded with the plugin of the same name)."""
+    staging = BUILD / 'sounds'
+    shutil.rmtree(staging, ignore_errors=True)
+    made = sounds.build(staging)
+    if made:
+        files = {str(p.relative_to(staging)).replace('/', '\\'): p.read_bytes() for p in sorted(staging.rglob('*.wav'))}
+        archive = BUILD / 'mod' / (Path(make_plugin.NAME).stem + '.bsa')
+        bsa.write(archive, files)
+        print(f'Packed {len(files)} sounds into {archive.relative_to(ROOT)}')
+    return made
+
+
 def package(dll, pdb):
     exported, imported = pe_tables(dll)
     missing = {'SKSEPlugin_Load', 'SKSEPlugin_Version'} - exported
@@ -242,7 +257,7 @@ def package(dll, pdb):
     shutil.copy2(dll, plugins)
     shutil.copy2(pdb, plugins)
     package_docs(plugins / NAME)
-    make_plugin.write(BUILD / 'mod' / make_plugin.NAME)
+    make_plugin.write(BUILD / 'mod' / make_plugin.NAME, package_sounds())
     print(f'{dll.name}: exports {", ".join(sorted(exported))}')
     print(f'{dll.name}: imports {", ".join(imported)}')
     print(f'Packaged {plugins.relative_to(ROOT)}')
