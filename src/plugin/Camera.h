@@ -49,7 +49,6 @@ namespace SkiingInSkyrim::Camera
     struct Info
     {
         const char* status{ "idle" };
-        const char* tumble{ "no tumble yet" };
         bool        smoothCam{ false };
         bool        enhancedDeathCam{ false };
         bool        enhancedDeathCamRagdoll{ false };  // its ragdoll camera is on

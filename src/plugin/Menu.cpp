@@ -1,6 +1,7 @@
 #include "plugin/Menu.h"
 
 #include "plugin/Camera.h"
+#include "plugin/FlowBar.h"
 #include "plugin/Input.h"
 #include "plugin/Movement.h"
 #include "plugin/Overlay.h"
@@ -89,7 +90,6 @@ namespace SkiingInSkyrim::Menu
                                "so tumbles have no tumble shot. Set bEnable = false under [Ragdoll Camera] in "
                                "po3_EnhancedDeathCamera.ini to use it.");
             }
-            Line(fmt::format("Tumble camera: {}", camera.tumble));
         }
 
         void RenderBinding(Settings::Binding binding, const char* label, const char* prompt)
@@ -168,10 +168,10 @@ namespace SkiingInSkyrim::Menu
                                          "Ctrl+click a slider to type a value.");
         }
 
-        bool ResetButton() { return ImGuiMCP::Button("Reset this page to defaults"); }
+        bool ResetButton(const char* label = "Reset this page to defaults") { return ImGuiMCP::Button(label); }
 
         // The physics settings on one page, under their group headings, with a reset for just those.
-        void PhysicsPage(Settings::Page page)
+        void PhysicsPage(Settings::Page page, const char* resetLabel = "Reset this page to defaults")
         {
             auto physics = Settings::Physics();
             bool changed = false;
@@ -190,7 +190,7 @@ namespace SkiingInSkyrim::Menu
                 Sliders(physics, group.fields, changed, finished);
             }
             ImGuiMCP::Spacing();
-            if (ResetButton()) {
+            if (ResetButton(resetLabel)) {
                 const Core::SkiSettings defaults;
                 for (const auto& group : Settings::PhysicsGroups()) {
                     if (group.page != page) {
@@ -242,6 +242,8 @@ namespace SkiingInSkyrim::Menu
                                         "skiing. Landing along a slope is soft; landing flat or skiing into trees, "
                                         "rocks and walls hurts (see Impacts).");
 
+            PhysicsPage(Settings::Page::General, "Reset Flow to defaults");
+
             ImGuiMCP::SeparatorText("Compatibility");
             RenderTdm();
             RenderMovementChain();
@@ -251,15 +253,16 @@ namespace SkiingInSkyrim::Menu
         void __stdcall RenderControls()
         {
             RenderBindings();
-            Toggle("Looking around steers (keyboard/mouse)", Settings::LookSteersKeyboardMouse,
+            Toggle("Looking around adds extra steering (keyboard/mouse)", Settings::LookSteersKeyboardMouse,
                 Settings::SetLookSteersKeyboardMouse,
                 "W/A/S/D steer relative to where you look, so moving the mouse while holding a key turns the skis. "
                 "Off, they steer relative to the chase camera and the mouse only looks around.");
-            Toggle("Looking around steers (gamepad)", Settings::LookSteersGamepad, Settings::SetLookSteersGamepad,
+            Toggle("Looking around adds extra steering (gamepad)", Settings::LookSteersGamepad, Settings::SetLookSteersGamepad,
                 "The left stick steers relative to where you look, so the right stick turns the skis while the left "
                 "is pushed. Off, it steers relative to the chase camera and the right stick only looks around.");
             ImGuiMCP::TextWrapped("%s", "Edge with the triggers or the mouse buttons (left/right edge): the skis carve "
                                         "an arc that tightens with more edge.");
+            ImGuiMCP::NewLine();
             ImGuiMCP::TextWrapped("%s", "Steer with the left stick or W/A/S/D: the skis "
                                         "turn toward where you push, relative to the camera, more firmly the further "
                                         "you push. Push firmly the way the skis already point to tuck and go faster. "
@@ -269,6 +272,7 @@ namespace SkiingInSkyrim::Menu
                                         "edge either, skis smearing sideways at speed swing back round to where "
                                         "you're going. Steering harder than they can carve skids them round and "
                                         "scrubs speed.");
+            ImGuiMCP::NewLine();
             ImGuiMCP::TextWrapped("%s", "Hold skid to twist the skis sideways and dig the edges in: a hockey stop. "
                                         "They twist toward the edge you're holding, or into the hill with no edge, "
                                         "further the longer you hold. Keep holding and you stay put on the hill. "
@@ -400,6 +404,7 @@ namespace SkiingInSkyrim::Menu
         SKSEMenuFramework::AddSectionItem("Impacts", RenderImpacts);
         SKSEMenuFramework::AddInputEvent(OnFrameworkInput);
         SKSEMenuFramework::AddHudElement(Overlay::Render);
+        SKSEMenuFramework::AddHudElement(FlowBar::Render);
         return true;
     }
 }

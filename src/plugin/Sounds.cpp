@@ -230,6 +230,37 @@ namespace SkiingInSkyrim::Sounds
         g_info.ground = "";
     }
 
+    void PlayFlow(RE::PlayerCharacter* player)
+    {
+        constexpr RE::FormID kFlowSound = 0x000C8C77;  // UIEnchantingLearnEffect, filling and emptying alike
+        const auto settings = Settings::Sound();
+        if (settings.enabled) {
+            Play(player, Descriptor(kFlowSound), settings.volume, 1.0F);
+        }
+    }
+
+    void MuteRagdollLoop(bool muted)
+    {
+        // VOCShoutFXSlowTimeActiveLPSD (mag_cloak_active_lp.wav): the loop Immersive Sounds Compendium's
+        // "Silent Player Ragdoll" option silences everywhere.
+        constexpr RE::FormID    kRagdollLoop = 0x0003F593;
+        constexpr std::uint16_t kSilent = 10000;  // static attenuation, 1/100 dB
+        static std::optional<std::uint16_t> s_attenuation;
+        auto* form = Descriptor(kRagdollLoop);
+        auto* sound = form ? skyrim_cast<RE::BGSStandardSoundDef*>(form->soundDescriptor) : nullptr;
+        if (!sound || muted == s_attenuation.has_value()) {
+            return;
+        }
+        auto& attenuation = sound->soundCharacteristics.staticAttenuation;
+        if (muted) {
+            s_attenuation = attenuation;
+            attenuation = kSilent;
+        } else {
+            attenuation = *s_attenuation;
+            s_attenuation.reset();
+        }
+    }
+
     Info GetInfo()
     {
         std::scoped_lock lock(g_infoLock);

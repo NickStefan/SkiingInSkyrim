@@ -1,5 +1,6 @@
 #include "plugin/Skiing.h"
 
+#include "core/Flow.h"
 #include "core/Impact.h"
 #include "core/Snow.h"
 #include "plugin/Camera.h"
@@ -63,6 +64,43 @@ namespace SkiingInSkyrim::Skiing
 
         // Out of stamina; logged when it changes.
         bool g_tired = false;
+
+        // Flow: main thread only, in memory only (a save loading empties it). g_flowView is what the bar shows.
+        Core::FlowState             g_flow;
+        std::optional<RE::NiPoint3> g_flowLast;  // where the player was last frame, skiing
+        std::mutex                  g_flowLock;
+        FlowView                    g_flowView;
+
+        Core::FlowSettings FlowSettingsOf(const Core::SkiSettings& physics)
+        {
+            return { .fillMetres = physics.flowFillMetres, .reserveMetres = physics.flowReserveMetres };
+        }
+
+        void PublishFlow(const Core::SkiSettings& physics, bool filled, bool absorbed)
+        {
+            std::scoped_lock lock(g_flowLock);
+            g_flowView.enabled = physics.flow;
+            g_flowView.full = g_flow.Full();
+            g_flowView.shown = Core::FlowShown(g_flow, FlowSettingsOf(physics));
+            g_flowView.fills += filled ? 1 : 0;
+            g_flowView.absorbs += absorbed ? 1 : 0;
+        }
+
+        // A landing or crash as hard as falling this many metres, that would hurt or knock you down: true if a
+        // full flow bar takes it instead.
+        bool FlowTakes(RE::PlayerCharacter* player, float metres, const Core::SkiSettings& physics, const char* what)
+        {
+            if (!physics.flow || !Core::FlowAbsorb(g_flow, metres)) {
+                return false;
+            }
+            spdlog::info("flow: took a {} like a {:.1f}m fall; {:.1f}m left{}", what, metres, g_flow.reserve,
+                g_flow.Full() ? "" : ", empty");
+            if (!g_flow.Full()) {
+                Sounds::PlayFlow(player);
+            }
+            PublishFlow(physics, false, true);
+            return true;
+        }
 
         void SetOverlay(const OverlayData& overlay)
         {
@@ -529,6 +567,11 @@ namespace SkiingInSkyrim::Skiing
             }
             g_tumbling = true;
             g_tumbleGuard = true;
+            if (physics.flow && !g_flow.Full() && g_flow.descended > 0.0F) {
+                spdlog::info("flow: a tumble at {:.0f}m of {:.0f}, starting over", g_flow.descended, physics.flowFillMetres);
+            }
+            Core::FlowFall(g_flow);
+            g_flowLast.reset();
             g_tumbleSettled = 0.0F;
             g_tumbleSeconds = 0.0F;
             g_tumbleHealth = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
@@ -564,6 +607,7 @@ namespace SkiingInSkyrim::Skiing
                 const auto position = player->GetPosition();
                 const RE::NiPoint3 from{ position.x - direction.x * kTumblePushUnits,
                     position.y - direction.y * kTumblePushUnits, position.z };
+                Sounds::MuteRagdollLoop(true);
                 process->KnockExplosion(player, from, magnitude);
                 if (auto* skis = removeSkis ? Skis::Worn(player) : nullptr) {
                     RE::ActorEquipManager::GetSingleton()->UnequipObject(player, skis);
@@ -596,13 +640,6 @@ namespace SkiingInSkyrim::Skiing
                         speeds.fastest, speeds.fastestAcross, settling ? ", settling" : braking ? ", braking" : "",
                         Camera::Describe(player));
                 }
-                if (g_tumbleRagdollSeconds >= 1.0F && g_tumbleRagdollSeconds - std::max(0.0F, delta) < 1.0F) {
-                    const auto* water = RE::TESWaterSystem::GetSingleton();
-                    spdlog::info("tumble {:.1f}s: water system: {}{}, underwater height {:.0f}, player at {:.0f}",
-                        g_tumbleSeconds, !water ? "?" : water->playerUnderwater ? "player underwater" : "player dry",
-                        water && water->partiallyUnderwater ? " (partly)" : "", water ? water->underwaterHeight : 0.0F,
-                        position.z);
-                }
             }
             const bool down = player->IsInRagdollState() ||
                               player->AsActorState()->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
@@ -615,6 +652,7 @@ namespace SkiingInSkyrim::Skiing
             g_tumbleSettled += std::max(0.0F, delta);
             if (g_tumbleSettled >= kTumbleSettleSeconds) {
                 g_tumbleGuard = false;
+                Sounds::MuteRagdollLoop(false);
                 if (!Downed(player)) {
                     Camera::LeaveKnockdownCamera(player);
                 }
@@ -638,16 +676,23 @@ namespace SkiingInSkyrim::Skiing
             const float metres = Core::LandingFallMetres(into, takeoffInto, physics.gravity);
             const float cushion = physics.powder ? physics.powderLandingMetres * powder : 0.0F;
             const float cushioned = std::max(0.0F, metres - cushion);
-            const float damage = physics.impactDamage ? ImpactDamage(cushioned, physics.landingDamageScale) : 0.0F;
+            // Powder takes its share of the tumble too: what's left is as hard as hitting at this speed.
+            const float hit = std::sqrt(2.0F * std::max(0.0F, physics.gravity) * cushioned);
+            float       damage = physics.impactDamage ? ImpactDamage(cushioned, physics.landingDamageScale) : 0.0F;
+            const bool  harmful = damage > 0.0F || (physics.crashRagdoll && hit >= physics.landingTumbleSpeed);
+            const bool  flowed = harmful && FlowTakes(player, cushioned, physics, "landing");
+            if (flowed) {
+                damage = 0.0F;
+            }
             if (metres < 3.0F && damage <= 0.0F) {
                 return;
             }
             auto*       values = player->AsActorValueOwner();
             const float health = values->GetActorValue(RE::ActorValue::kHealth);
             Hurt(player, damage);
-            // Powder takes its share of the tumble too: what's left is as hard as hitting at this speed.
-            Tumble(player, velocity, std::sqrt(2.0F * std::max(0.0F, physics.gravity) * cushioned),
-                physics.landingTumbleSpeed, damage > 0.0F, physics);
+            if (!flowed) {
+                Tumble(player, velocity, hit, physics.landingTumbleSpeed, damage > 0.0F, physics);
+            }
             spdlog::info("landing: {:.1f}m/s into a {:.0f} degree slope ({:.1f} at takeoff) at {:.0f}mph | like a "
                          "{:.1f}m fall ({:.1f}m after {:.0f}% powder) -> damage {:.0f} | health {:.0f} -> {:.0f}",
                 into, slope, takeoffInto, Core::Length(velocity) * 2.23694F, metres, cushioned,
@@ -696,13 +741,20 @@ namespace SkiingInSkyrim::Skiing
             const bool  crash = hit && Solid(hit->layer) && hit->slopeDegrees >= physics.crashMinSurfaceDegrees &&
                                sideways >= kSidewaysLoss;
             const float metres = Core::EquivalentFallMetres(sideways, physics.gravity);
-            const float damage = crash && physics.impactDamage ? ImpactDamage(metres, physics.crashDamageScale) : 0.0F;
+            float       damage = crash && physics.impactDamage ? ImpactDamage(metres, physics.crashDamageScale) : 0.0F;
+            const bool  harmful = crash && (damage > 0.0F || (physics.crashRagdoll && sideways >= physics.crashTumbleSpeed));
+            const bool  flowed = harmful && FlowTakes(player, metres, physics, "crash");
+            if (flowed) {
+                damage = 0.0F;
+            }
             Hurt(player, damage);
             if (crash) {
                 g_crashSound = { sideways, hit->layer == RE::COL_LAYER::kTrees || hit->layer == RE::COL_LAYER::kProps ?
                                                Sounds::Ground::Wood :
                                                Sounds::Ground::Stone };
-                Tumble(player, impact->before, sideways, physics.crashTumbleSpeed, damage > 0.0F, physics);
+                if (!flowed) {
+                    Tumble(player, impact->before, sideways, physics.crashTumbleSpeed, damage > 0.0F, physics);
+                }
             }
             const float before = Core::Length(impact->before);
             if (!crash && !Settings::DetailedLog()) {
@@ -875,6 +927,8 @@ namespace SkiingInSkyrim::Skiing
             }
             g_debug.active = false;
             g_debug.inactiveReason = reason;
+            g_flowLast.reset();
+            PublishFlow(Settings::Physics(), false, false);
             SetCommand({});
             SetOverlay({ .active = false });
             Sounds::Stop();
@@ -942,6 +996,16 @@ namespace SkiingInSkyrim::Skiing
         }
         FollowSnow(player, controller, position, grounded, starting || (grounded && g_airVelocity.count > 0), delta,
             physics);
+        bool flowFilled = false;
+        if (physics.flow && g_flowLast && position.GetDistance(*g_flowLast) <= kTeleportUnits) {
+            flowFilled = Core::FlowDescend(g_flow, (g_flowLast->z - position.z) / kUnitsPerMetre, FlowSettingsOf(physics));
+            if (flowFilled) {
+                spdlog::info("flow: full after {:.0f}m down; takes {:.0f}m of fall", physics.flowFillMetres,
+                    g_flow.reserve);
+                Sounds::PlayFlow(player);
+            }
+        }
+        g_flowLast = position;
         float landingSpeed = 0.0F;
 
         if (starting) {
@@ -1064,6 +1128,7 @@ namespace SkiingInSkyrim::Skiing
             .material = Surface::MaterialName(g_snow.reading.land),
         });
 
+        PublishFlow(physics, flowFilled, false);
         g_debug.active = true;
         g_debug.inactiveReason = "";
         g_debug.ground = ground;
@@ -1076,6 +1141,9 @@ namespace SkiingInSkyrim::Skiing
         g_tumbleGuard = false;
         g_tumbling = false;
         g_snow = {};
+        g_flow = {};
+        g_flowLast.reset();
+        Sounds::MuteRagdollLoop(false);
     }
 
     void ApplyMovement(RE::PlayerCharacter* player, RE::NiPoint3& movement, RE::NiPoint3& rotation)
@@ -1100,6 +1168,12 @@ namespace SkiingInSkyrim::Skiing
     {
         std::scoped_lock lock(g_overlayLock);
         return g_overlay;
+    }
+
+    FlowView GetFlow()
+    {
+        std::scoped_lock lock(g_flowLock);
+        return g_flowView;
     }
 
     Body GetBody()

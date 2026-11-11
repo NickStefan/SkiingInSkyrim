@@ -26,7 +26,7 @@ Rough order of work. Things move up or down as playtesting shows what matters.
 - Tumbling: a big enough landing or crash throws you into the game's ragdoll on the way you were going, and the
   skis come off (kept in the inventory) if it hurt; harmless tumbles keep them on by default. All optional. Sliders set how much speed the body keeps into the
   tumble and how long it tumbles before it's braked to a stop; no fall damage counts until you're back on your
-  feet. A tumble shot (needs in-game testing) in place of what the game's knockdown camera shows: frozen where
+  feet. A tumble shot in place of what the game's knockdown camera shows: frozen where
   the camera was at the hit, then drifting lazily after the body without turning with it, aimed at a
   smoothed point on the body and kept above the ground, through getting up; then back to third person, facing
   the same way. The game stays in its knockdown (bleedout) camera state, which SmoothCam leaves alone; we hook
@@ -39,6 +39,13 @@ Rough order of work. Things move up or down as playtesting shows what matters.
   Skiing (and the chase camera) waits for the get-up animation to finish: it turns the character, which the
   chase camera read as looking around and spun with.
   A body creeping down the slope is braked to rest so the game gets you up.
+- Flow (General page, on by default): descending on skis without a tumble fills a bar
+  in the top right corner (white; 150 m by default). Full (gold), landings and crashes that would hurt or knock
+  you down are taken from its reserve (25 m of fall by default) instead; the last one is let off however big,
+  and empties it. A tumble while filling starts it over. Height counts air drops too; fast travel and load
+  doors keep it (teleport frames don't count), a save loading or a new game empties it: nothing goes into the
+  save. Shown only with the skis on and no menu open, independent of the debug overlay. The same chime as it
+  fills and as it empties (UIEnchantingLearnEffect). core/Flow, FlowBar.
 - Skis come off in water (kept in the inventory).
 - Skis as a wearable, craftable item (ESP); wearing them turns skiing on. Ski models placed under the feet.
 - Procedural ski stance, no animation files: knee bend, forward lean, tuck, lean into turns with hip angulation,
@@ -46,7 +53,8 @@ Rough order of work. Things move up or down as playtesting shows what matters.
 - Skid stance: skidding, the upper body turns toward the direction of travel while the legs stay with the skis.
 - Airs: small hops keep the stance; past a set drop the game's (or OAR's) fall animation takes over.
 - Stamina: hard carving and skating strides cost stamina; out of it, edges are weaker and strides don't start.
-- Debug overlay: fall line, ski and travel arrows, edge gauge, slope, skating, mph, land material and powder.
+- Debug overlay (off by default): fall line, ski and travel arrows, edge gauge, slope, skating, mph, land material
+  and powder.
 - Log: by default only start-up, compatibility, state changes, crashes, big landings and tumbles. "Detailed
   log" (General page, off by default) adds telemetry, surfaces, airs, every impact and the tumble camera
   (about 7.5 MB an hour, three quarters of it telemetry).
@@ -60,6 +68,10 @@ Rough order of work. Things move up or down as playtesting shows what matters.
   5 dB quieter (pitched down and Nick's own powder takes sounded worse). Strides, landings and crashes use the
   game's sneak footsteps and jump-landings for the ground (crashes: wood for trees and props, stone
   otherwise). Tried and removed: a continuous glide of sneak footsteps (didn't read) and a wind loop (awful).
+  Knockdown audio: while the player is ragdolled the engine plays Slow Time's droning, muffled loop
+  (VOCShoutFXSlowTimeActiveLPSD, mag_cloak_active_lp.wav; Immersive Sounds Compendium's "Silent Player
+  Ragdoll" replaces that file with silence everywhere). We mute it only during our tumbles, by raising its
+  static attenuation to 100 dB from just before the knockdown until the tumble's over (and on load). Tested.
 - Settings menu in pages: General, Controls, Speed, Body, Camera, Sound, Stamina, Impacts.
 
 Controller is the intended way to play; keyboard and mouse work but are rougher. True Directional Movement is a
@@ -67,11 +79,8 @@ soft requirement (see Later).
 
 ## Next: release
 
-- [ ] Knockdown audio: the game muffles everything (like being underwater) and plays a windy loop while the
-      player is ragdolled; Immersive Sounds Compendium has an option to mute the loop, so it's vanilla. Nothing
-      in Skyrim.esm is tied to it. The tumble log now has a "water system" line a second into each ragdoll: if
-      it says the player is underwater, clear that flag while tumbling; if dry, it's in the engine (later). Also
-      check it isn't the low-health effect (crashes have left health at 9).
+- [ ] Release 0.1.0 (Skyrim's 15th anniversary, Nov 11 2026): last in-game test of this build, push, then
+      `build.py source` and upload the mod and the source zip to Nexus.
 - [x] Licenses in the Nexus download: the build copies dist/ (README, CHANGELOG, COMPATIBILITY,
       THIRD-PARTY-NOTICES, licenses/) and our LICENSE into build/mod/SKSE/Plugins/SkiingInSkyrim/ (nothing at
       the Data root, where other mods' LICENSE.txt files would collide), plus commitlink.txt pointing at the

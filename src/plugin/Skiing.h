@@ -53,6 +53,19 @@ namespace SkiingInSkyrim::Skiing
     // Any thread.
     OverlayData GetOverlay();
 
+    // The flow bar (see core/Flow).
+    struct FlowView
+    {
+        bool          enabled{ false };
+        bool          full{ false };
+        float         shown{ 0.0F };  // 0..1: filled, or, full, the reserve left
+        std::uint32_t fills{ 0 };     // times it has filled, and hits it has taken, for the bar to flash
+        std::uint32_t absorbs{ 0 };
+    };
+
+    // Any thread.
+    FlowView GetFlow();
+
     // What the body and the skis are doing, for posing them on the animation thread.
     struct Body
     {

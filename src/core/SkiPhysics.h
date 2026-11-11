@@ -136,6 +136,11 @@ namespace SkiingInSkyrim::Core
         float ragdollThrow{ 0.0F };
         float ragdollSpeedKept{ 0.0F };
         float tumbleSlideSeconds{ 0.1F };
+        // Flow (see core/Flow): flowFillMetres descended without a tumble fills a bar that, full, takes
+        // flowReserveMetres of fall from hard landings and crashes before they hurt or knock you down.
+        bool  flow{ true };
+        float flowFillMetres{ 150.0F };
+        float flowReserveMetres{ 25.0F };
 
         // Briefly off the ground (up to groundHugSeconds) after skiing over a crest, without jumping: the
         // skier isn't thrown upward off the slope they left and is pulled down at groundHugGravity extra

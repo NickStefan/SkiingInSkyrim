@@ -49,7 +49,10 @@ namespace
             SkiingInSkyrim::Skiing::Reset();
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
+            SkiingInSkyrim::Skis::Refresh();
+            break;
         case SKSE::MessagingInterface::kNewGame:
+            SkiingInSkyrim::Skiing::Reset();
             SkiingInSkyrim::Skis::Refresh();
             break;
         default:

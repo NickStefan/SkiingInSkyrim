@@ -27,6 +27,13 @@ namespace SkiingInSkyrim::Sounds
     // Main thread, while it isn't: lets the footsteps back.
     void Stop();
 
+    // Main thread: the flow bar has just filled or emptied.
+    void PlayFlow(RE::PlayerCharacter* player);
+
+    // Main thread. The game plays Slow Time's droning loop while the player is ragdolled; muted from a tumble's
+    // start (before the ragdoll) until it's over, so the shout itself still sounds at any other time.
+    void MuteRagdollLoop(bool muted);
+
     struct Info
     {
         bool        hooked{ false };

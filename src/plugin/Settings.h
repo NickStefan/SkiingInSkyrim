@@ -59,6 +59,7 @@ namespace SkiingInSkyrim::Settings
     // Menu pages the physics settings are shown on.
     enum class Page
     {
+        General,
         Controls,
         Speed,
         Stamina,

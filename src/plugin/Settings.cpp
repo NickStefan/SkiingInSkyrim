@@ -213,7 +213,27 @@ namespace SkiingInSkyrim::Settings
                 &S::harmlessTumbleRemovesSkis },
         };
 
+        constexpr FloatField kFlowFields[] = {
+            { "FillMetres", "Height to fill", "Metres to descend on skis, without a tumble, to fill the bar. 150 m "
+                                              "is a good run down a mountainside.",
+                &S::flowFillMetres, 20.0F, 1000.0F, "%.0f" },
+            { "ReserveMetres", "Full bar takes", "Metres of fall a full bar takes from hard landings and crashes "
+                                                 "before it's empty. A flat landing from 15 m takes 15; the last hit "
+                                                 "is let off however big.",
+                &S::flowReserveMetres, 5.0F, 100.0F, "%.0f" },
+        };
+        constexpr BoolField kFlowSwitches[] = {
+            { "Enabled", "Flow", "Skiing down without falling fills a bar in the top right corner (white). Full "
+                                 "(gold), hard landings and crashes are taken from it instead of hurting or "
+                                 "knocking you down, until it's empty. A tumble while it fills starts it over. "
+                                 "Not kept in your save.",
+                &S::flow },
+        };
+
         constexpr PhysicsGroup kPhysicsGroups[] = {
+            { Page::General, "Flow", "Flow", kFlowSwitches, kFlowFields,
+                "For big airs: descend without falling to fill the bar, then spend it on landings and crashes "
+                "that would otherwise knock you down." },
             { Page::Controls, "Steering", "Steering", {}, kSteeringFields },
             { Page::Speed, "Speed", "Speed", {}, kSpeedFields },
             { Page::Speed, "Edges", "Edges and turns", {}, kEdgesFields },
@@ -389,7 +409,7 @@ namespace SkiingInSkyrim::Settings
             std::array<Button, kBindingCount>       bindings;
             std::array<std::string, kBindingCount>  bindingNames;
             bool                                    modEnabled{ true };
-            bool                                    showOverlay{ true };
+            bool                                    showOverlay{ false };
             bool                                    lookSteersKeyboardMouse{ true };
             bool                                    lookSteersGamepad{ false };
             bool                                    traceShaking{ false };

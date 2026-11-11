@@ -29,7 +29,6 @@ namespace SkiingInSkyrim::Camera
             Core::CameraFollowState  follow;
             std::optional<float>     observed;
             std::atomic<const char*> status{ "idle" };
-            std::atomic<const char*> tumble{ "no tumble yet" };
             std::atomic<bool>        smoothCam{ false };
             std::atomic<bool>        enhancedDeathCam{ false };
             std::atomic<bool>        enhancedDeathCamRagdoll{ false };
@@ -385,7 +384,6 @@ namespace SkiingInSkyrim::Camera
             constexpr int kOtherFrames = 10;
             if (ragdoll && camera && camera->currentState && !g_shot.follow.started &&
                 ++g_shot.otherFrames == kOtherFrames) {
-                g_state.tumble = "another camera had the knockdown";
                 spdlog::info("tumble camera: the ragdoll is in the {} camera, not the game's knockdown camera, so "
                              "there's no tumble shot{}",
                     StateName(camera->currentState->id),
@@ -407,7 +405,6 @@ namespace SkiingInSkyrim::Camera
             g_shot.checked = false;
             g_shot.logSeconds = 0.0F;
             Core::StartTumbleCamera(g_shot.follow, ToVec(start), BodyPoint(player));
-            g_state.tumble = "filmed the last tumble";
             spdlog::info("tumble camera: filming from ({:.0f}, {:.0f}, {:.0f}), {}", start.x, start.y, start.z,
                 g_shot.start ? "where the camera was at the hit" : "where the knockdown camera is");
         }
@@ -538,7 +535,7 @@ namespace SkiingInSkyrim::Camera
 
     Info GetInfo() noexcept
     {
-        return { g_state.status, g_state.tumble, g_state.smoothCam, g_state.enhancedDeathCam,
+        return { g_state.status, g_state.smoothCam, g_state.enhancedDeathCam,
             g_state.enhancedDeathCamRagdoll, g_state.yawDegrees, g_state.lookDegrees };
     }
 }
