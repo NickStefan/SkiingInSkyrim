@@ -443,6 +443,16 @@ namespace SkiingInSkyrim::Skiing
             return std::max(0.0F, scale) * Core::FallDamage(metres * kUnitsPerMetre, GameFallCurve());
         }
 
+        // God mode (tgm): a hit that would hurt or knock you down does neither, and leaves the flow bar alone.
+        bool GodModeTakes(const char* what)
+        {
+            if (!RE::PlayerCharacter::IsGodMode()) {
+                return false;
+            }
+            spdlog::info("god mode: ignored a {}", what);
+            return true;
+        }
+
         void Hurt(RE::PlayerCharacter* player, float damage)
         {
             if (damage > 0.0F) {
@@ -562,7 +572,8 @@ namespace SkiingInSkyrim::Skiing
         void Tumble(RE::PlayerCharacter* player, const Core::Vec3& travel, float hit, float minSpeed, bool hurt,
             const Core::SkiSettings& physics)
         {
-            if (!physics.crashRagdoll || hit < minSpeed || g_tumbling || !Alive(player)) {
+            if (!physics.crashRagdoll || hit < minSpeed || g_tumbling || !Alive(player) ||
+                RE::PlayerCharacter::IsGodMode()) {
                 return;
             }
             g_tumbling = true;
@@ -680,8 +691,8 @@ namespace SkiingInSkyrim::Skiing
             const float hit = std::sqrt(2.0F * std::max(0.0F, physics.gravity) * cushioned);
             float       damage = physics.impactDamage ? ImpactDamage(cushioned, physics.landingDamageScale) : 0.0F;
             const bool  harmful = damage > 0.0F || (physics.crashRagdoll && hit >= physics.landingTumbleSpeed);
-            const bool  flowed = harmful && FlowTakes(player, cushioned, physics, "landing");
-            if (flowed) {
+            const bool  spared = harmful && (GodModeTakes("landing") || FlowTakes(player, cushioned, physics, "landing"));
+            if (spared) {
                 damage = 0.0F;
             }
             if (metres < 3.0F && damage <= 0.0F) {
@@ -690,7 +701,7 @@ namespace SkiingInSkyrim::Skiing
             auto*       values = player->AsActorValueOwner();
             const float health = values->GetActorValue(RE::ActorValue::kHealth);
             Hurt(player, damage);
-            if (!flowed) {
+            if (!spared) {
                 Tumble(player, velocity, hit, physics.landingTumbleSpeed, damage > 0.0F, physics);
             }
             spdlog::info("landing: {:.1f}m/s into a {:.0f} degree slope ({:.1f} at takeoff) at {:.0f}mph | like a "
@@ -743,8 +754,8 @@ namespace SkiingInSkyrim::Skiing
             const float metres = Core::EquivalentFallMetres(sideways, physics.gravity);
             float       damage = crash && physics.impactDamage ? ImpactDamage(metres, physics.crashDamageScale) : 0.0F;
             const bool  harmful = crash && (damage > 0.0F || (physics.crashRagdoll && sideways >= physics.crashTumbleSpeed));
-            const bool  flowed = harmful && FlowTakes(player, metres, physics, "crash");
-            if (flowed) {
+            const bool  spared = harmful && (GodModeTakes("crash") || FlowTakes(player, metres, physics, "crash"));
+            if (spared) {
                 damage = 0.0F;
             }
             Hurt(player, damage);
@@ -752,7 +763,7 @@ namespace SkiingInSkyrim::Skiing
                 g_crashSound = { sideways, hit->layer == RE::COL_LAYER::kTrees || hit->layer == RE::COL_LAYER::kProps ?
                                                Sounds::Ground::Wood :
                                                Sounds::Ground::Stone };
-                if (!flowed) {
+                if (!spared) {
                     Tumble(player, impact->before, sideways, physics.crashTumbleSpeed, damage > 0.0F, physics);
                 }
             }
@@ -1042,7 +1053,8 @@ namespace SkiingInSkyrim::Skiing
         input.hasObserved = !starting;
         input.observed = observed;
         auto*      values = player->AsActorValueOwner();
-        const bool staminaCosts = physics.staminaPerCarveSecond > 0.0F || physics.staminaPerStride > 0.0F;
+        const bool staminaCosts = !RE::PlayerCharacter::IsGodMode() &&
+                                  (physics.staminaPerCarveSecond > 0.0F || physics.staminaPerStride > 0.0F);
         input.tired = staminaCosts && values->GetActorValue(RE::ActorValue::kStamina) < 1.0F;
         if (input.tired != g_tired) {
             g_tired = input.tired;
@@ -1050,7 +1062,7 @@ namespace SkiingInSkyrim::Skiing
         }
         const auto step = Core::StepSki(g_debug.ski, input, physics);
         g_sinceStride = step.skated ? 0.0F : g_sinceStride + delta;
-        if (const float cost = Core::StaminaCost(step, grounded, delta, physics); cost > 0.0F) {
+        if (const float cost = staminaCosts ? Core::StaminaCost(step, grounded, delta, physics) : 0.0F; cost > 0.0F) {
             values->DamageActorValue(RE::ActorValue::kStamina, cost);
         }
 

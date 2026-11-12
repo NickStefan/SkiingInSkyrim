@@ -49,4 +49,5 @@ __pycache__/
 
 # Local notes and game logs copied in for analysis
 /logs/
+/bugreports/
 *.log

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- God mode (`tgm`) is respected: no crash or landing damage, no tumbles, and skiing costs no stamina. The Flow bar
+  isn't spent while it's on.
+
 ## 0.1.0
 
 First release.
