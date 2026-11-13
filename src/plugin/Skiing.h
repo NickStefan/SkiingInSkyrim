@@ -10,7 +10,7 @@ namespace SkiingInSkyrim::Skiing
 
     // From the ModifyMovementData hook, after every other hook below ours: replaces the horizontal
     // movement with the ski model's velocity while skiing is active.
-    void ApplyMovement(RE::PlayerCharacter* player, RE::NiPoint3& movement, RE::NiPoint3& rotation);
+    void ApplyMovement(RE::PlayerCharacter* player, float delta, RE::NiPoint3& movement, RE::NiPoint3& rotation);
 
     // Main thread, before a save loads: what was going on in the last game (a tumble) doesn't carry into it.
     void Reset();

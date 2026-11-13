@@ -20,7 +20,7 @@ namespace SkiingInSkyrim::Movement
             static void thunk(RE::PlayerCharacter* player, float delta, RE::NiPoint3& movement, RE::NiPoint3& rotation)
             {
                 func(player, delta, movement, rotation);
-                Skiing::ApplyMovement(player, movement, rotation);
+                Skiing::ApplyMovement(player, delta, movement, rotation);
                 std::scoped_lock lock(g_sampleLock);
                 g_sample = { { movement.x, movement.y, movement.z }, { rotation.x, rotation.y, rotation.z } };
                 ++g_calls.count;

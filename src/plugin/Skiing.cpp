@@ -17,10 +17,14 @@ namespace SkiingInSkyrim::Skiing
 {
     namespace
     {
-        // ModifyMovementData's vector is in the character's frame (x right, y forward) and measures speed along
-        // the ground; in-game it was 1.167x the Havok speed in m/s at walk, run and sprint.
-        constexpr float kMovementPerMeterPerSecond = 70.0F / 60.0F;
+        // ModifyMovementData's vector is this frame's movement, in the character's frame (x right, y forward) and
+        // along the ground: at 60 fps it was 1.167x the Havok speed in m/s at walk, run and sprint, which is 70
+        // units a metre over 1/60 s.
         constexpr float kUnitsPerMetre = 70.0F;
+        // So a stall can't launch the skier. It also means below 10 fps the skier moves slower than intended.
+        constexpr float kLongestMovementFrame = 0.1F;
+        // Only if the game passes a zero, negative or non-finite delta, which it doesn't in normal play.
+        constexpr float kFallbackMovementFrame = 1.0F / 60.0F;
 
         // A stick that hasn't reported for this long is ignored.
         constexpr float kStaleStickSeconds = 0.5F;
@@ -1158,7 +1162,7 @@ namespace SkiingInSkyrim::Skiing
         Sounds::MuteRagdollLoop(false);
     }
 
-    void ApplyMovement(RE::PlayerCharacter* player, RE::NiPoint3& movement, RE::NiPoint3& rotation)
+    void ApplyMovement(RE::PlayerCharacter* player, float delta, RE::NiPoint3& movement, RE::NiPoint3& rotation)
     {
         Command command;
         {
@@ -1169,8 +1173,10 @@ namespace SkiingInSkyrim::Skiing
             return;
         }
         const float yaw = player->data.angle.z;
-        movement.x = Core::Dot(command.velocity, Core::Right(yaw)) * kMovementPerMeterPerSecond;
-        movement.y = Core::Dot(command.velocity, Core::Forward(yaw)) * kMovementPerMeterPerSecond;
+        const float seconds = std::isfinite(delta) && delta > 0.0F ? std::min(delta, kLongestMovementFrame) : kFallbackMovementFrame;
+        const float scale = kUnitsPerMetre * seconds;
+        movement.x = Core::Dot(command.velocity, Core::Right(yaw)) * scale;
+        movement.y = Core::Dot(command.velocity, Core::Forward(yaw)) * scale;
         rotation.z = 0.0F;
     }
 
