@@ -25,13 +25,15 @@ WINDOW = RATE // 100  # 10 ms
 AUDIO = {'.wav', '.m4a', '.mp3', '.flac', '.ogg', '.aac', '.caf', '.aif', '.aiff'}
 
 # Per set: the longest a sound may be (seconds) and its loudness (RMS of its loud part, dBFS). Optionally the
-# set whose recordings it uses ('source') and a pitch factor (below 1 is lower, and as much longer).
+# set whose recordings it uses ('source'), a pitch factor (below 1 is lower, and as much longer) and how far above
+# the room noise counts as sound ('above_floor', default ABOVE_FLOOR).
 SETS = {
     'powder-turn': {'max_seconds': 1.5, 'level_db': -25.0, 'source': 'packed-turn'},
-    'powder-skid': {'max_seconds': 2.0, 'level_db': -23.0, 'source': 'packed-turn'},
+    # The skid recording is de-hummed (tools/dehum.py), which leaves the room so quiet that the shuffling between
+    # skids would join them up at the default.
+    'powder-skid': {'max_seconds': 2.0, 'level_db': -23.0, 'source': 'packed-skid', 'above_floor': 3.0},
     'packed-turn': {'max_seconds': 1.5, 'level_db': -20.0},
-    # The skid recording has a steady ~450 Hz hum under it (a howl once levelled), so skids use the turns.
-    'packed-skid': {'max_seconds': 2.0, 'level_db': -18.0, 'source': 'packed-turn'},
+    'packed-skid': {'max_seconds': 2.0, 'level_db': -18.0, 'above_floor': 3.0},
 }
 FILTERS = 'highpass=f=70,lowpass=f=14000,afftdn=nr=12:nf=-70:tn=1'
 SKIP_START = 0.5    # seconds at each end of a take left out: the phone's record and stop taps
@@ -66,7 +68,7 @@ def windows(samples):
             for i in range(0, len(samples) - WINDOW + 1, WINDOW)]
 
 
-def sounds_in(samples):
+def sounds_in(samples, above_floor=ABOVE_FLOOR):
     """(start, end) sample ranges of the separate sounds in a take, and how far (dB) each is above the room
     noise."""
     skip_start, skip_end = int(SKIP_START * RATE) // WINDOW, int(SKIP_END * RATE) // WINDOW
@@ -77,7 +79,7 @@ def sounds_in(samples):
     kept = levels[skip_start:len(levels) - skip_end]
     loudest = max(kept)
     floor = max(sorted(kept)[len(kept) // 10], 1e-9)
-    threshold = max(loudest * 10 ** (-QUIET_DB / 20), floor * ABOVE_FLOOR)
+    threshold = max(loudest * 10 ** (-QUIET_DB / 20), floor * above_floor)
     ranges = []
     for i, level in enumerate(levels):
         if level < threshold:
@@ -131,11 +133,12 @@ def build(output):
     for name, options in SETS.items():
         options = dict(options)
         folder, pitch = options.pop('source', name), options.pop('pitch', 1.0)
+        above_floor = options.pop('above_floor', ABOVE_FLOOR)
         sources = sorted(p for p in (ASSETS / folder).glob('*') if p.suffix.lower() in AUDIO)
         paths = []
         for source in sources:
             samples = decode(source)
-            found = sounds_in(samples)
+            found = sounds_in(samples, above_floor)
             clear = [(start, end) for start, end, db in found if db >= CLEAR_DB]
             if pitch != 1.0:
                 # Cut at the same places as the unpitched set, so both have the same sounds.
