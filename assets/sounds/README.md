@@ -16,7 +16,8 @@ between). A set with no recordings borrows the other's; with neither, the game's
 For skating strides, landings and crashes, the game's own sounds for the ground are used.
 
 A set can take another's recordings instead of its own (`source` in `SETS`, `tools/sounds.py`): the powder sets
-are currently the packed recordings, quieter.
+are currently the packed recordings, quieter, and the skid sets use the turn recordings, because
+`packed-skid/packedskid.m4a` has a steady ~450 Hz hum under it that howls once levelled.
 
 ## Recording (foley)
 

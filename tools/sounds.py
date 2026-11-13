@@ -28,9 +28,10 @@ AUDIO = {'.wav', '.m4a', '.mp3', '.flac', '.ogg', '.aac', '.caf', '.aif', '.aiff
 # set whose recordings it uses ('source') and a pitch factor (below 1 is lower, and as much longer).
 SETS = {
     'powder-turn': {'max_seconds': 1.5, 'level_db': -25.0, 'source': 'packed-turn'},
-    'powder-skid': {'max_seconds': 2.0, 'level_db': -23.0, 'source': 'packed-skid'},
+    'powder-skid': {'max_seconds': 2.0, 'level_db': -23.0, 'source': 'packed-turn'},
     'packed-turn': {'max_seconds': 1.5, 'level_db': -20.0},
-    'packed-skid': {'max_seconds': 2.0, 'level_db': -18.0},
+    # The skid recording has a steady ~450 Hz hum under it (a howl once levelled), so skids use the turns.
+    'packed-skid': {'max_seconds': 2.0, 'level_db': -18.0, 'source': 'packed-turn'},
 }
 FILTERS = 'highpass=f=70,lowpass=f=14000,afftdn=nr=12:nf=-70:tn=1'
 SKIP_START = 0.5    # seconds at each end of a take left out: the phone's record and stop taps
