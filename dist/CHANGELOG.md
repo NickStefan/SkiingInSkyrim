@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
+- Skiing is the same speed at any frame rate. It was tuned at 60 FPS and ran at half speed at 30 FPS and double
+  at 120; 60 FPS is unchanged. Below 10 FPS it's slower than intended.
+- The low howl under the skid sounds is gone: the skid recording had a steady hum, now taken out.
 - God mode (`tgm`) is respected: no crash or landing damage, no tumbles, and skiing costs no stamina. The Flow bar
   isn't spent while it's on.
 

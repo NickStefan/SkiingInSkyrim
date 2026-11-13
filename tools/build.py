@@ -132,7 +132,8 @@ def build_plugin(dependencies):
     headers = list(SRC.rglob('*.h'))
     pch_header, pch_source = SRC / 'PCH.h', SRC / 'PCH.cpp'
     pch, pch_obj = OBJ / 'plugin/PCH.pch', OBJ / 'plugin/PCH.obj'
-    if stale(pch, [pch_header, pch_source]):
+    # VERSION goes in as compiler flags, so a new version rebuilds the PCH and with it everything.
+    if stale(pch, [pch_header, pch_source, ROOT / 'VERSION']):
         pch_obj.parent.mkdir(parents=True, exist_ok=True)
         msvc('cl', base_flags() + ['/c', '/YcPCH.h', '/Fp' + wine_env.win(pch),
                                    '/Fo' + wine_env.win(pch_obj), wine_env.win(pch_source)])

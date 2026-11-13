@@ -59,13 +59,18 @@ Rough order of work. Things move up or down as playtesting shows what matters.
   log" (General page, off by default) adds telemetry, surfaces, airs, every impact and the tumble camera
   (about 7.5 MB an hour, three quarters of it telemetry).
 - Loads on SE 1.5.97 and AE (Address Library); refuses to load on VR.
+- Any frame rate: the movement handed to the game each frame is the ski speed times that frame's length (capped
+  at 0.1 s), not a fixed 1/60 s. Checked in game at 30, 60 and 120 FPS; tests/FrameRateTests.cpp runs the ski
+  model from 20 to 144 FPS against 60.
+- God mode (tgm): no crash or landing damage, no tumbles, no stamina cost, and Flow isn't spent.
 - Sounds: the player's footsteps silenced while skiing (BGSImpactManager's footstep sink skips the player).
   Event sounds only (core/SkiSound): a turn sound as the path starts curving each way, skids while sliding
   sideways (repeating), skating strides, landings and crashes. Running straight is quiet. Turns and skids are
   our recordings on every ground (Nick's foley in assets/sounds; tools/sounds.py slices, filters and levels
   them, make_plugin adds a SNDR per set, tools/bsa.py packs them uncompressed into SkiingInSkyrim.bsa).
   Powder and packed sets play together, split by the powder share; powder is currently the packed recordings,
-  5 dB quieter (pitched down and Nick's own powder takes sounded worse). Strides, landings and crashes use the
+  5 dB quieter (pitched down and Nick's own powder takes sounded worse). The skid recording had a steady 415 Hz
+  hum that howled once levelled; tools/dehum.py takes it out (the original is kept in assets/sounds/originals). Strides, landings and crashes use the
   game's sneak footsteps and jump-landings for the ground (crashes: wood for trees and props, stone
   otherwise). Tried and removed: a continuous glide of sneak footsteps (didn't read) and a wind loop (awful).
   Knockdown audio: while the player is ragdolled the engine plays Slow Time's droning, muffled loop
@@ -86,6 +91,8 @@ soft requirement (see Later).
       the Data root, where other mods' LICENSE.txt files would collide), plus commitlink.txt pointing at the
       commit it was built from. `build.py source` zips the committed source for the Nexus optional file (GPL
       Corresponding Source). Keep CHANGELOG.md's section for each VERSION up to date.
+- [ ] Release 0.1.1 (frame-rate speed fix, skid sound howl, god mode): last in-game test of this build, push,
+      then `build.py source` and upload both to Nexus as for 0.1.0.
 
 ## Later / ideas
 
